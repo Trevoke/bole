@@ -1,7 +1,7 @@
 let test_deterministic () =
   let keys = List.init 200 (fun i -> Printf.sprintf "key-%05d" i) in
   let run () =
-    let c = Bole.Chunker.create ~target_size:20 in
+    let c = Bole.Chunker.create ~target_size:20 ~level:0 in
     List.filter_map (fun key ->
       if Bole.Chunker.feed c ~key then begin
         let n = Bole.Chunker.count c in
@@ -16,7 +16,7 @@ let test_deterministic () =
   Alcotest.(check (list int)) "deterministic boundaries" sizes1 sizes2
 
 let test_respects_min_size () =
-  let c = Bole.Chunker.create ~target_size:20 in
+  let c = Bole.Chunker.create ~target_size:20 ~level:0 in
   let min_size = 20 / 4 in
   let violation = ref false in
   for i = 0 to 999 do
@@ -30,7 +30,7 @@ let test_respects_min_size () =
   Alcotest.(check bool) "no chunk below min_size" false !violation
 
 let test_count_increments () =
-  let c = Bole.Chunker.create ~target_size:100 in
+  let c = Bole.Chunker.create ~target_size:100 ~level:0 in
   Alcotest.(check int) "count starts at 0" 0 (Bole.Chunker.count c);
   ignore (Bole.Chunker.feed c ~key:"a");
   Alcotest.(check int) "count after 1 feed" 1 (Bole.Chunker.count c);
@@ -38,7 +38,7 @@ let test_count_increments () =
   Alcotest.(check int) "count after 2 feeds" 2 (Bole.Chunker.count c)
 
 let test_reset_clears_count () =
-  let c = Bole.Chunker.create ~target_size:100 in
+  let c = Bole.Chunker.create ~target_size:100 ~level:0 in
   ignore (Bole.Chunker.feed c ~key:"a");
   ignore (Bole.Chunker.feed c ~key:"b");
   Bole.Chunker.reset c;
@@ -49,7 +49,7 @@ let prop_mean_chunk_size =
     ~count:20
     QCheck2.Gen.(int_range 10 100)
     (fun target_size ->
-       let c = Bole.Chunker.create ~target_size in
+       let c = Bole.Chunker.create ~target_size ~level:0 in
        let chunk_sizes = ref [] in
        let total_keys = target_size * 100 in
        for i = 0 to total_keys - 1 do
@@ -73,7 +73,7 @@ let prop_no_tiny_chunks =
     ~count:20
     QCheck2.Gen.(int_range 10 100)
     (fun target_size ->
-       let c = Bole.Chunker.create ~target_size in
+       let c = Bole.Chunker.create ~target_size ~level:0 in
        let min_size = max 1 (target_size / 4) in
        let ok = ref true in
        for i = 0 to target_size * 100 - 1 do

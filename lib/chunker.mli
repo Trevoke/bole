@@ -14,9 +14,11 @@
 
 type t
 
-(** [create ~target_size] creates a chunker targeting approximately
-    [target_size] entries per chunk. *)
-val create : target_size:int -> t
+(** [create ~target_size ~level] creates a chunker targeting approximately
+    [target_size] entries per chunk. The [level] parameter salts boundary
+    detection so that the same key sequence produces different boundaries
+    at different tree levels. *)
+val create : target_size:int -> level:int -> t
 
 (** [feed t ~key] feeds a key and returns [true] if a chunk boundary
     should be placed after this key. *)

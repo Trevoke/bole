@@ -1,19 +1,22 @@
 type t = {
   target_size : int;
   min_size : int;
+  level : int;
   mutable count : int;
 }
 
-let create ~target_size =
+let create ~target_size ~level =
   { target_size;
     min_size = max 1 (target_size / 4);
+    level;
     count = 0 }
 
 let feed t ~key =
   t.count <- t.count + 1;
   if t.count < t.min_size then false
   else
-    let h = Hash.hash key in
+    let salted = String.make 1 (Char.chr (t.level land 0xFF)) ^ key in
+    let h = Hash.hash salted in
     let raw = Hash.to_raw_string h in
     let low32 =
       let b0 = Char.code (String.get raw 0) in
