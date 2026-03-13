@@ -1,2 +1,5 @@
 let () =
-  Alcotest.run "bole" []
+  Alcotest.run "bole"
+    (List.concat
+       [ Test_hash.tests
+       ])
