@@ -3,3 +3,4 @@
 module Hash = Hash
 module Store = Store
 module Chunk = Chunk
+module Chunker = Chunker
