@@ -43,11 +43,33 @@ let test_unsorted_raises () =
   | exception Invalid_argument _ -> ()
   | _ -> Alcotest.fail "expected Invalid_argument for unsorted input"
 
+let test_multi_chunk_tree () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  (* Root should exist in store *)
+  let data = Bole.Store.get store root in
+  let root_chunk = Bole.Chunk.decode data in
+  (* Root of a 200-entry tree with target 20 should be internal *)
+  match root_chunk with
+  | Bole.Chunk.Internal entries ->
+    (* Internal node should have children *)
+    Alcotest.(check bool) "has children" true (List.length entries > 0);
+    (* Each child should exist in store *)
+    List.iter (fun (e : Bole.Chunk.internal_entry) ->
+      Alcotest.(check bool) "child in store"
+        true (Bole.Store.mem store e.child)
+    ) entries
+  | Bole.Chunk.Leaf _ ->
+    Alcotest.fail "expected internal root for 200 entries with target 20"
+
 let tests =
   [ "tree", [
       Alcotest.test_case "empty tree" `Quick test_empty_tree;
       Alcotest.test_case "single entry" `Quick test_single_entry;
       Alcotest.test_case "small tree (one chunk)" `Quick test_small_tree_one_chunk;
       Alcotest.test_case "unsorted input raises" `Quick test_unsorted_raises;
+      Alcotest.test_case "multi-chunk tree" `Quick test_multi_chunk_tree;
     ]
   ]

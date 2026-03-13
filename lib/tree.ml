@@ -32,11 +32,55 @@ let build ?(target_size = 64) store pairs =
 
   flush_leaf ();
 
-  match List.rev !parents with
+  let parent_list = List.rev !parents in
+
+  match parent_list with
   | [] ->
     (* Empty input *)
     Store.put store (Chunk.encode (Chunk.Leaf []))
   | [(_k, h)] -> h
-  | _many ->
-    (* Internal levels — next task *)
-    assert false
+  | _ ->
+    (* --- Level 1+: Internal nodes --- *)
+    let level = ref 1 in
+    let entries = ref parent_list in
+    let result = ref (snd (List.hd parent_list)) in
+    let continue = ref true in
+    while !continue do
+      let chunker = Chunker.create ~target_size ~level:!level in
+      let current = ref [] in
+      let next_parents = ref [] in
+
+      let flush_internal () =
+        match !current with
+        | [] -> ()
+        | ents ->
+          let ents = List.rev ents in
+          let last_key = (List.hd (List.rev ents) : Chunk.internal_entry).key in
+          let data = Chunk.encode (Chunk.Internal ents) in
+          let h = Store.put store data in
+          next_parents := (last_key, h) :: !next_parents;
+          current := []
+      in
+
+      List.iter (fun (key, child) ->
+        current := ({ Chunk.key; child } : Chunk.internal_entry) :: !current;
+        if Chunker.feed chunker ~key then begin
+          flush_internal ();
+          Chunker.reset chunker
+        end
+      ) !entries;
+
+      flush_internal ();
+
+      let next = List.rev !next_parents in
+      (match next with
+       | [(_k, h)] ->
+         result := h;
+         continue := false
+       | [] ->
+         continue := false
+       | _ ->
+         entries := next;
+         level := !level + 1)
+    done;
+    !result
