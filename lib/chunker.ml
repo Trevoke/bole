@@ -22,17 +22,23 @@ let feed t ~key =
       let b3 = Char.code (String.get raw 3) in
       ((b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3) land 0x7FFFFFFF
     in
-    (* After min_size, use modular check with a denominator that
-       yields mean chunk size ≈ target_size.
-       Expected keys after min_size = target_size - min_size,
-       so probability per key = 1 / (target_size - min_size).
-       We use: low32 mod denominator = 0, where denominator = target - min. *)
-    let base_denom = max 1 (t.target_size - t.min_size) in
+    (* Dynamic probability: boundary likelihood increases quadratically
+       with chunk size. P(boundary at count) = (count - min)² / target².
+
+       At count = min_size:     probability 0%
+       At count = target_size:  probability ~56% (for min = target/4)
+       At count = 2*target:     forced boundary (100%)
+
+       The quadratic ramp produces a tighter distribution than linear:
+       the hazard rate starts very low and accelerates, so few chunks
+       end early, most cluster near target_size, and the hard cap
+       at 2x prevents runaways. *)
     if t.count >= t.target_size * 2 then
-      (* Force boundary at 2x target *)
       true
     else
-      low32 mod base_denom = 0
+      let progress = t.count - t.min_size in
+      let modulus = max 1 (t.target_size * t.target_size) in
+      low32 mod modulus < progress * progress
 
 let reset t = t.count <- 0
 
