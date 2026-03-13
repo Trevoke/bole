@@ -9,8 +9,8 @@ let build ?(target_size = 64) store pairs =
     match !current with
     | [] -> ()
     | entries ->
+      let last_key = (List.hd entries : Chunk.leaf_entry).key in
       let entries = List.rev entries in
-      let last_key = (List.hd (List.rev entries) : Chunk.leaf_entry).key in
       let data = Chunk.encode (Chunk.Leaf entries) in
       let h = Store.put store data in
       parents := (last_key, h) :: !parents;
@@ -54,8 +54,8 @@ let build ?(target_size = 64) store pairs =
         match !current with
         | [] -> ()
         | ents ->
+          let last_key = (List.hd ents : Chunk.internal_entry).key in
           let ents = List.rev ents in
-          let last_key = (List.hd (List.rev ents) : Chunk.internal_entry).key in
           let data = Chunk.encode (Chunk.Internal ents) in
           let h = Store.put store data in
           next_parents := (last_key, h) :: !next_parents;
@@ -78,7 +78,7 @@ let build ?(target_size = 64) store pairs =
          result := h;
          continue := false
        | [] ->
-         continue := false
+         failwith "Tree.build: internal error: empty level"
        | _ ->
          entries := next;
          level := !level + 1)
