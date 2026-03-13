@@ -1,6 +1,6 @@
-let leaf_entry_equal a b =
-  String.equal a.Bole.Chunk.key b.Bole.Chunk.key
-  && String.equal a.Bole.Chunk.value b.Bole.Chunk.value
+let leaf_entry_equal (a : Bole.Chunk.leaf_entry) (b : Bole.Chunk.leaf_entry) =
+  String.equal a.key b.key
+  && String.equal a.value b.value
 
 let internal_entry_equal a b =
   String.equal a.Bole.Chunk.key b.Bole.Chunk.key
@@ -82,14 +82,14 @@ let test_decode_truncated_raises () =
 
 let gen_leaf_entry =
   QCheck2.Gen.(
-    let+ key = small_string ~gen:printable
-    and+ value = small_string ~gen:printable in
+    let+ key = string_small_of printable
+    and+ value = string_small_of printable in
     Bole.Chunk.{ key; value })
 
 let gen_internal_entry =
   QCheck2.Gen.(
-    let+ key = small_string ~gen:printable
-    and+ child_input = small_string ~gen:printable in
+    let+ key = string_small_of printable
+    and+ child_input = string_small_of printable in
     Bole.Chunk.{ key; child = Bole.Hash.hash child_input })
 
 let prop_leaf_round_trip =
