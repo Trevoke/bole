@@ -5,4 +5,5 @@ let () =
        ; Test_store.tests
        ; Test_chunk.tests
        ; Test_chunker.tests
+       ; Test_tree.tests
        ])
