@@ -3,4 +3,5 @@ let () =
     (List.concat
        [ Test_hash.tests
        ; Test_store.tests
+       ; Test_chunk.tests
        ])
