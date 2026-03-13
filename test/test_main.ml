@@ -4,4 +4,5 @@ let () =
        [ Test_hash.tests
        ; Test_store.tests
        ; Test_chunk.tests
+       ; Test_chunker.tests
        ])
