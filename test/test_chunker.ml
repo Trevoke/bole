@@ -85,12 +85,31 @@ let prop_no_tiny_chunks =
        done;
        !ok)
 
+let test_level_salting () =
+  let keys = List.init 200 (fun i -> Printf.sprintf "key-%05d" i) in
+  let boundaries_at level =
+    let c = Bole.Chunker.create ~target_size:20 ~level in
+    let acc = ref [] in
+    List.iteri (fun i key ->
+      if Bole.Chunker.feed c ~key then begin
+        acc := i :: !acc;
+        Bole.Chunker.reset c
+      end
+    ) keys;
+    List.rev !acc
+  in
+  let b0 = boundaries_at 0 in
+  let b1 = boundaries_at 1 in
+  Alcotest.(check bool) "different levels produce different boundaries"
+    true (b0 <> b1)
+
 let tests =
   [ "chunker", [
       Alcotest.test_case "deterministic" `Quick test_deterministic;
       Alcotest.test_case "respects min_size" `Quick test_respects_min_size;
       Alcotest.test_case "count increments" `Quick test_count_increments;
       Alcotest.test_case "reset clears count" `Quick test_reset_clears_count;
+      Alcotest.test_case "level salting" `Quick test_level_salting;
       QCheck_alcotest.to_alcotest prop_mean_chunk_size;
       QCheck_alcotest.to_alcotest prop_no_tiny_chunks;
     ]
