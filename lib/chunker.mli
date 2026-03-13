@@ -1,12 +1,16 @@
 (** Content-defined chunk boundary detection with dynamic probability.
 
     Determines where to split sorted key sequences into chunks.
-    Uses BLAKE2s hash of each key and a threshold that increases
-    boundary probability as the chunk grows past the target size.
+    Uses BLAKE2s hash of each key and a quadratic ramp that increases
+    boundary probability as the chunk grows.
 
     Below [target_size / 4]: boundary probability is 0.
-    At [target_size]: boundary probability per key is ~1/target.
-    Above [2 * target_size]: boundary probability approaches certainty. *)
+    At [target_size]: per-key boundary probability is ~56%.
+    At [2 * target_size]: forced boundary.
+
+    Note: mean chunk size is approximately 0.5x-0.8x of [target_size]
+    due to cumulative probability. Callers should set [target_size]
+    higher than their desired mean to compensate. *)
 
 type t
 
