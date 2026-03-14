@@ -360,6 +360,55 @@ let test_put_multi_chunk () =
   Alcotest.(check (option string)) "original intact"
     (Some "val-00199") (Bole.Tree.find store root''' "key-00199")
 
+let test_delete_existing () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 10 (fun i ->
+    (Printf.sprintf "key-%03d" i, Printf.sprintf "val-%03d" i)) in
+  let root = Bole.Tree.build ~target_size:200 store (List.to_seq pairs) in
+  let root' = Bole.Tree.delete store root "key-005" in
+  Alcotest.(check (option string)) "deleted key gone"
+    None (Bole.Tree.find store root' "key-005");
+  Alcotest.(check (option string)) "other key intact"
+    (Some "val-004") (Bole.Tree.find store root' "key-004");
+  Alcotest.(check (option string)) "old tree unchanged"
+    (Some "val-005") (Bole.Tree.find store root "key-005")
+
+let test_delete_missing_raises () =
+  let store = Bole.Store.create () in
+  let root = Bole.Tree.build store (List.to_seq [("a", "1")]) in
+  match Bole.Tree.delete store root "zzz" with
+  | exception Not_found -> ()
+  | _ -> Alcotest.fail "expected Not_found for missing key"
+
+let test_delete_last_entry () =
+  let store = Bole.Store.create () in
+  let root = Bole.Tree.build store (List.to_seq [("only", "entry")]) in
+  let empty_root = Bole.Tree.build store Seq.empty in
+  let root' = Bole.Tree.delete store root "only" in
+  Alcotest.(check bool) "empty tree after delete"
+    true (Bole.Hash.equal root' empty_root)
+
+let test_delete_multi_chunk () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  let root' = Bole.Tree.delete store root "key-00000" in
+  let root'' = Bole.Tree.delete store root' "key-00100" in
+  let root''' = Bole.Tree.delete store root'' "key-00199" in
+  Alcotest.(check (option string)) "first deleted"
+    None (Bole.Tree.find store root''' "key-00000");
+  Alcotest.(check (option string)) "middle deleted"
+    None (Bole.Tree.find store root''' "key-00100");
+  Alcotest.(check (option string)) "last deleted"
+    None (Bole.Tree.find store root''' "key-00199");
+  Alcotest.(check (option string)) "key-00001 intact"
+    (Some "val-00001") (Bole.Tree.find store root''' "key-00001");
+  Alcotest.(check (option string)) "key-00099 intact"
+    (Some "val-00099") (Bole.Tree.find store root''' "key-00099");
+  let all = Bole.Tree.range store root''' |> List.of_seq in
+  Alcotest.(check int) "197 entries remain" 197 (List.length all)
+
 let tests =
   [ "tree", [
       Alcotest.test_case "empty tree" `Quick test_empty_tree;
@@ -389,5 +438,9 @@ let tests =
       Alcotest.test_case "put update existing" `Quick test_put_update_existing;
       Alcotest.test_case "put same value noop" `Quick test_put_same_value_noop;
       Alcotest.test_case "put in multi-chunk tree" `Quick test_put_multi_chunk;
+      Alcotest.test_case "delete existing" `Quick test_delete_existing;
+      Alcotest.test_case "delete missing raises" `Quick test_delete_missing_raises;
+      Alcotest.test_case "delete last entry" `Quick test_delete_last_entry;
+      Alcotest.test_case "delete in multi-chunk tree" `Quick test_delete_multi_chunk;
     ]
   ]

@@ -40,3 +40,7 @@ val range :
     mapped to [value]. If [key] already exists, its value is replaced.
     The old tree remains accessible via its original root hash. *)
 val put : Store.t -> Hash.t -> string -> string -> Hash.t
+
+(** [delete store root key] returns a new root hash with [key] removed.
+    @raise Not_found if [key] does not exist in the tree. *)
+val delete : Store.t -> Hash.t -> string -> Hash.t
