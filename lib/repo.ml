@@ -15,12 +15,12 @@ let mkdir_p dir =
   go dir
 
 let write_file path content =
-  let oc = open_out path in
+  let oc = open_out_bin path in
   Fun.protect ~finally:(fun () -> close_out oc) (fun () ->
     output_string oc content)
 
 let read_file path =
-  let ic = open_in path in
+  let ic = open_in_bin path in
   Fun.protect ~finally:(fun () -> close_in ic) (fun () ->
     let len = in_channel_length ic in
     really_input_string ic len)
