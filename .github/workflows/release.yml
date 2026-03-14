@@ -18,8 +18,6 @@ jobs:
             artifact: bole-linux-x86_64
           - os: macos-latest
             artifact: bole-macos-arm64
-          - os: macos-13
-            artifact: bole-macos-x86_64
           - os: windows-latest
             artifact: bole-windows-x86_64
 
@@ -34,13 +32,16 @@ jobs:
           ocaml-compiler: '5.2'
 
       - name: Install dependencies
-        run: opam install . --deps-only --yes
+        run: opam install . --deps-only --with-test --yes
 
       - name: Build
-        run: opam exec -- dune build
+        run: opam exec -- dune build @install
 
       - name: Run tests
         run: opam exec -- dune test
+
+      - name: Build binary
+        run: opam exec -- dune build bin/main.exe
 
       - name: Package binary (Unix)
         if: runner.os != 'Windows'
