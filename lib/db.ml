@@ -37,19 +37,28 @@ let current_branch db = db.current_branch
 let branch_heads db =
   Hashtbl.fold (fun name hash acc -> (name, hash) :: acc) db.branches []
 
-let of_parts ~store ~branches ~current_branch ~head_commit =
+let working_tables db =
+  StringMap.fold (fun name root acc -> (name, root) :: acc) db.tables []
+
+let of_parts ~store ~branches ~current_branch ~head_commit ?(working_tables=[]) () =
   let branch_tbl = Hashtbl.create 16 in
   List.iter (fun (name, hash) -> Hashtbl.replace branch_tbl name hash) branches;
-  let tables = match head_commit with
-    | Some h ->
-      let commit_data = Store.get store h in
-      let commit_obj = Commit.decode commit_data in
-      let state_data = Store.get store commit_obj.state in
-      let entries = Db_state.decode state_data in
-      List.fold_left (fun acc (e : Db_state.table_entry) ->
-        StringMap.add e.name e.root acc
-      ) StringMap.empty entries
-    | None -> StringMap.empty
+  let tables = match working_tables with
+    | _ :: _ ->
+      List.fold_left (fun acc (name, root) ->
+        StringMap.add name root acc
+      ) StringMap.empty working_tables
+    | [] ->
+      match head_commit with
+      | Some h ->
+        let commit_data = Store.get store h in
+        let commit_obj = Commit.decode commit_data in
+        let state_data = Store.get store commit_obj.state in
+        let entries = Db_state.decode state_data in
+        List.fold_left (fun acc (e : Db_state.table_entry) ->
+          StringMap.add e.name e.root acc
+        ) StringMap.empty entries
+      | None -> StringMap.empty
   in
   { store; branches = branch_tbl; current_branch; tables }
 

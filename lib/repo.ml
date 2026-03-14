@@ -3,6 +3,7 @@ let head_file path = Filename.concat (bole_dir path) "HEAD"
 let refs_dir path = Filename.concat (bole_dir path) "refs"
 let heads_dir path = Filename.concat (refs_dir path) "heads"
 let objects_dir path = Filename.concat (bole_dir path) "objects"
+let working_file path = Filename.concat (bole_dir path) "working"
 
 let mkdir_p dir =
   let rec go dir =
@@ -48,7 +49,17 @@ let load path =
   let head_commit =
     List.assoc_opt current_branch branches
   in
-  Db.of_parts ~store ~branches ~current_branch ~head_commit
+  let working_tables =
+    let wf = working_file path in
+    if Sys.file_exists wf then begin
+      let data = read_file wf in
+      if String.length data > 0 then
+        List.map (fun (e : Db_state.table_entry) -> (e.name, e.root))
+          (Db_state.decode data)
+      else []
+    end else []
+  in
+  Db.of_parts ~store ~branches ~current_branch ~head_commit ~working_tables ()
 
 let save path db =
   write_file (head_file path) (Db.current_branch db ^ "\n");
@@ -56,7 +67,11 @@ let save path db =
   mkdir_p heads;
   List.iter (fun (name, hash) ->
     write_file (Filename.concat heads name) (Hash.to_hex hash ^ "\n")
-  ) (Db.branch_heads db)
+  ) (Db.branch_heads db);
+  let entries = List.map (fun (name, root) ->
+    Db_state.{ name; root }
+  ) (Db.working_tables db) in
+  write_file (working_file path) (Db_state.encode entries)
 
 let find_root () =
   let rec search dir =
