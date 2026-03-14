@@ -409,6 +409,78 @@ let test_delete_multi_chunk () =
   let all = Bole.Tree.range store root''' |> List.of_seq in
   Alcotest.(check int) "197 entries remain" 197 (List.length all)
 
+let prop_mutation_history_independence =
+  QCheck2.Test.make ~name:"mutation produces same tree as bulk build"
+    ~count:20
+    QCheck2.Gen.(list_size (int_range 5 100)
+      (pair
+        (string_size ~gen:printable (int_range 1 15))
+        (string_size ~gen:printable (int_range 1 20))))
+    (fun pairs ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) pairs in
+       if List.length sorted < 3 then true
+       else begin
+         let store1 = Bole.Store.create () in
+         let root_bulk = Bole.Tree.build store1
+           (List.to_seq sorted) in
+         let store2 = Bole.Store.create () in
+         let root_empty = Bole.Tree.build store2
+           Seq.empty in
+         let root_mut = List.fold_left (fun r (k, v) ->
+           Bole.Tree.put store2 r k v
+         ) root_empty sorted in
+         Bole.Hash.equal root_bulk root_mut
+       end)
+
+let prop_put_find_round_trip =
+  QCheck2.Test.make ~name:"put then find returns inserted value"
+    ~count:20
+    QCheck2.Gen.(list_size (int_range 1 200)
+      (pair
+        (string_size ~gen:printable (int_range 1 15))
+        (string_size ~gen:printable (int_range 1 20))))
+    (fun pairs ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) pairs in
+       let store = Bole.Store.create () in
+       let root = Bole.Tree.build store Seq.empty in
+       let final_root = List.fold_left (fun r (k, v) ->
+         Bole.Tree.put store r k v
+       ) root sorted in
+       List.for_all (fun (k, v) ->
+         Bole.Tree.find store final_root k = Some v
+       ) sorted)
+
+let prop_delete_find_round_trip =
+  QCheck2.Test.make ~name:"delete removes keys, keeps others"
+    ~count:20
+    QCheck2.Gen.(list_size (int_range 10 100)
+      (pair
+        (string_size ~gen:printable (int_range 1 15))
+        (string_size ~gen:printable (int_range 1 20))))
+    (fun pairs ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) pairs in
+       if List.length sorted < 4 then true
+       else begin
+         let store = Bole.Store.create () in
+         let root = Bole.Tree.build store
+           (List.to_seq sorted) in
+         let to_delete = List.filteri (fun i _ -> i mod 2 = 0) sorted in
+         let to_keep = List.filteri (fun i _ -> i mod 2 <> 0) sorted in
+         let final_root = List.fold_left (fun r (k, _) ->
+           Bole.Tree.delete store r k
+         ) root to_delete in
+         List.for_all (fun (k, _) ->
+           Bole.Tree.find store final_root k = None
+         ) to_delete
+         &&
+         List.for_all (fun (k, v) ->
+           Bole.Tree.find store final_root k = Some v
+         ) to_keep
+       end)
+
 let tests =
   [ "tree", [
       Alcotest.test_case "empty tree" `Quick test_empty_tree;
@@ -442,5 +514,8 @@ let tests =
       Alcotest.test_case "delete missing raises" `Quick test_delete_missing_raises;
       Alcotest.test_case "delete last entry" `Quick test_delete_last_entry;
       Alcotest.test_case "delete in multi-chunk tree" `Quick test_delete_multi_chunk;
+      QCheck_alcotest.to_alcotest prop_mutation_history_independence;
+      QCheck_alcotest.to_alcotest prop_put_find_round_trip;
+      QCheck_alcotest.to_alcotest prop_delete_find_round_trip;
     ]
   ]
