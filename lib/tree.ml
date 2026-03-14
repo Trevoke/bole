@@ -1,78 +1,83 @@
-let build ?(target_size = 64) store pairs =
-  (* --- Level 0: Leaf chunks --- *)
-  let chunker = Chunker.create ~target_size ~level:0 in
-  let current = ref [] in
-  let parents = ref [] in
-  let prev_key = ref None in
+let default_target_size = 64
 
-  let flush_leaf () =
-    match !current with
-    | [] -> ()
-    | entries ->
-      let last_key = (List.hd entries : Chunk.leaf_entry).key in
-      let entries = List.rev entries in
-      let data = Chunk.encode (Chunk.Leaf entries) in
-      let h = Store.put store data in
-      parents := (last_key, h) :: !parents;
-      current := []
-  in
+(** Chunk a list of leaf entries, store chunks,
+    return (last_key, hash) pairs. *)
+let chunk_leaf_entries ~target_size store entries =
+  match entries with
+  | [] -> []
+  | _ ->
+    let chunker = Chunker.create ~target_size ~level:0 in
+    let current = ref [] in
+    let result = ref [] in
+    List.iter (fun (e : Chunk.leaf_entry) ->
+      current := e :: !current;
+      if Chunker.feed chunker ~key:e.key then begin
+        let last_key = (List.hd !current).Chunk.key in
+        let ents = List.rev !current in
+        let data = Chunk.encode (Chunk.Leaf ents) in
+        let h = Store.put store data in
+        result := (last_key, h) :: !result;
+        current := [];
+        Chunker.reset chunker
+      end
+    ) entries;
+    (match !current with
+     | [] -> ()
+     | ents ->
+       let last_key = (List.hd ents : Chunk.leaf_entry).key in
+       let ents = List.rev ents in
+       let data = Chunk.encode (Chunk.Leaf ents) in
+       let h = Store.put store data in
+       result := (last_key, h) :: !result);
+    List.rev !result
 
-  Seq.iter (fun (key, value) ->
-    (match !prev_key with
-     | Some pk when String.compare key pk < 0 ->
-       invalid_arg "Tree.build: keys not in sorted order"
-     | _ -> ());
-    prev_key := Some key;
-    current := ({ Chunk.key; value } : Chunk.leaf_entry) :: !current;
-    if Chunker.feed chunker ~key then begin
-      flush_leaf ();
-      Chunker.reset chunker
-    end
-  ) pairs;
+(** Chunk a list of internal entries at the given level, store chunks,
+    return (last_key, hash) pairs. *)
+let chunk_internal_entries ~target_size ~level store entries =
+  match entries with
+  | [] -> []
+  | _ ->
+    let chunker = Chunker.create ~target_size ~level in
+    let current = ref [] in
+    let result = ref [] in
+    List.iter (fun (e : Chunk.internal_entry) ->
+      current := e :: !current;
+      if Chunker.feed chunker ~key:e.key then begin
+        let last_key = (List.hd !current).Chunk.key in
+        let ents = List.rev !current in
+        let data = Chunk.encode (Chunk.Internal ents) in
+        let h = Store.put store data in
+        result := (last_key, h) :: !result;
+        current := [];
+        Chunker.reset chunker
+      end
+    ) entries;
+    (match !current with
+     | [] -> ()
+     | ents ->
+       let last_key = (List.hd ents : Chunk.internal_entry).key in
+       let ents = List.rev ents in
+       let data = Chunk.encode (Chunk.Internal ents) in
+       let h = Store.put store data in
+       result := (last_key, h) :: !result);
+    List.rev !result
 
-  flush_leaf ();
-
-  let parent_list = List.rev !parents in
-
+(** Build internal levels from parent entries until a single root.
+    Returns the root hash. *)
+let build_upper_levels ~target_size store parent_list =
   match parent_list with
-  | [] ->
-    (* Empty input *)
-    Store.put store (Chunk.encode (Chunk.Leaf []))
+  | [] -> Store.put store (Chunk.encode (Chunk.Leaf []))
   | [(_k, h)] -> h
   | _ ->
-    (* --- Level 1+: Internal nodes --- *)
     let level = ref 1 in
     let entries = ref parent_list in
     let result = ref (snd (List.hd parent_list)) in
     let continue = ref true in
     while !continue do
-      let chunker = Chunker.create ~target_size ~level:!level in
-      let current = ref [] in
-      let next_parents = ref [] in
-
-      let flush_internal () =
-        match !current with
-        | [] -> ()
-        | ents ->
-          let last_key = (List.hd ents : Chunk.internal_entry).key in
-          let ents = List.rev ents in
-          let data = Chunk.encode (Chunk.Internal ents) in
-          let h = Store.put store data in
-          next_parents := (last_key, h) :: !next_parents;
-          current := []
-      in
-
-      List.iter (fun (key, child) ->
-        current := ({ Chunk.key; child } : Chunk.internal_entry) :: !current;
-        if Chunker.feed chunker ~key then begin
-          flush_internal ();
-          Chunker.reset chunker
-        end
-      ) !entries;
-
-      flush_internal ();
-
-      let next = List.rev !next_parents in
+      let pairs = List.map (fun (key, child) ->
+        ({ Chunk.key; child } : Chunk.internal_entry)
+      ) !entries in
+      let next = chunk_internal_entries ~target_size ~level:!level store pairs in
       (match next with
        | [(_k, h)] ->
          result := h;
@@ -84,6 +89,23 @@ let build ?(target_size = 64) store pairs =
          level := !level + 1)
     done;
     !result
+
+let build ?(target_size = default_target_size) store pairs =
+  let prev_key = ref None in
+  let all_entries = ref [] in
+
+  Seq.iter (fun (key, value) ->
+    (match !prev_key with
+     | Some pk when String.compare key pk < 0 ->
+       invalid_arg "Tree.build: keys not in sorted order"
+     | _ -> ());
+    prev_key := Some key;
+    all_entries := ({ Chunk.key; value } : Chunk.leaf_entry) :: !all_entries
+  ) pairs;
+
+  let entries = List.rev !all_entries in
+  let parent_list = chunk_leaf_entries ~target_size store entries in
+  build_upper_levels ~target_size store parent_list
 
 let find store root key =
   let rec descend h =
