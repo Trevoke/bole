@@ -92,5 +92,17 @@ let switch db ~name =
   let commit_hash = Hashtbl.find db.branches name in
   let db = checkout db commit_hash in
   { db with current_branch = name }
-let diff _db ~from:_ ~to_:_ ~table:_ = failwith "not implemented"
+let table_root_from_commit db commit_hash table =
+  let commit_data = Store.get db.store commit_hash in
+  let commit_obj = Commit.decode commit_data in
+  let state_data = Store.get db.store commit_obj.state in
+  let entries = Db_state.decode state_data in
+  match List.find_opt (fun (e : Db_state.table_entry) -> e.name = table) entries with
+  | Some e -> e.root
+  | None -> empty_tree_root db.store
+
+let diff db ~from ~to_ ~table =
+  let from_root = table_root_from_commit db from table in
+  let to_root = table_root_from_commit db to_ table in
+  Diff.diff db.store ~from:from_root ~to_:to_root
 let merge _db ~ours:_ ~theirs:_ = failwith "not implemented"
