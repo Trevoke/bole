@@ -10,3 +10,4 @@ module Db_state = Db_state
 module Commit = Commit
 module Merge = Merge
 module Db = Db
+module Repo = Repo
