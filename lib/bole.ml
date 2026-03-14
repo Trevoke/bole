@@ -9,5 +9,6 @@ module Diff = Diff
 module Db_state = Db_state
 module Commit = Commit
 module Merge = Merge
+module Tuple = Tuple
 module Db = Db
 module Repo = Repo
