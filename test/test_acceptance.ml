@@ -100,13 +100,12 @@ let test_clean_merge () =
   let db = Bole.Db.put db ~table:"users" ~key:"bob" ~value:"v2" in
   let _cb, db = Bole.Db.commit db ~message:"update bob" in
   let result = Bole.Db.merge db ~ours:"branch-b" ~theirs:"branch-a" in
-  match result with
-  | Ok db ->
-    Alcotest.(check (option string)) "alice merged"
-      (Some "v2") (Bole.Db.find db ~table:"users" ~key:"alice");
-    Alcotest.(check (option string)) "bob merged"
-      (Some "v2") (Bole.Db.find db ~table:"users" ~key:"bob")
-  | Error _ -> Alcotest.fail "expected clean merge"
+  Alcotest.(check int) "no conflicts" 0 (List.length result.Bole.Db.conflicts);
+  let db = result.Bole.Db.db in
+  Alcotest.(check (option string)) "alice merged"
+    (Some "v2") (Bole.Db.find db ~table:"users" ~key:"alice");
+  Alcotest.(check (option string)) "bob merged"
+    (Some "v2") (Bole.Db.find db ~table:"users" ~key:"bob")
 
 (* --- Test 6: Conflicting merge --- *)
 
@@ -122,16 +121,13 @@ let test_conflicting_merge () =
   let db = Bole.Db.put db ~table:"users" ~key:"alice" ~value:"v3" in
   let _cb, db = Bole.Db.commit db ~message:"alice v3" in
   let result = Bole.Db.merge db ~ours:"branch-b" ~theirs:"branch-a" in
-  match result with
-  | Ok _ -> Alcotest.fail "expected conflict"
-  | Error conflicts ->
-    Alcotest.(check int) "one conflict" 1 (List.length conflicts);
-    let c = List.hd conflicts in
-    Alcotest.(check string) "conflict table" "users" c.Bole.Db.table;
-    Alcotest.(check string) "conflict key" "alice" c.Bole.Db.key;
-    Alcotest.(check string) "conflict base" "v1" c.Bole.Db.base;
-    Alcotest.(check string) "conflict ours" "v3" c.Bole.Db.ours;
-    Alcotest.(check string) "conflict theirs" "v2" c.Bole.Db.theirs
+  Alcotest.(check int) "one conflict" 1 (List.length result.Bole.Db.conflicts);
+  let c = List.hd result.Bole.Db.conflicts in
+  Alcotest.(check string) "conflict table" "users" c.Bole.Db.table;
+  Alcotest.(check string) "conflict key" "alice" c.Bole.Db.key;
+  Alcotest.(check string) "conflict base" "v1" c.Bole.Db.base;
+  Alcotest.(check string) "conflict ours" "v3" c.Bole.Db.ours;
+  Alcotest.(check string) "conflict theirs" "v2" c.Bole.Db.theirs
 
 (* --- Test 7: Multi-table commits --- *)
 
