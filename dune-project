@@ -11,6 +11,7 @@
   (ocaml (>= 5.2))
   (dune (>= 3.17))
   (digestif (>= 1.2.0))
+  (cmdliner (>= 1.3.0))
   (alcotest (and (>= 1.8.0) :with-test))
   (qcheck (and (>= 0.22) :with-test))
   (qcheck-alcotest (and (>= 0.22) :with-test))))
