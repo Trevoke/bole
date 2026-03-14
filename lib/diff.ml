@@ -54,6 +54,49 @@ let rec diff_nodes store h1 h2 =
       merge_leaves (List.map to_leaf left) (List.map to_leaf right)
 
 and merge_internals store left right =
+  let flatten_children store children =
+    List.to_seq children
+    |> Seq.flat_map (fun (e : Chunk.internal_entry) ->
+      Tree.range store e.child
+      |> Seq.map (fun (k, v) ->
+        ({ Chunk.key = k; value = v } : Chunk.leaf_entry)))
+    |> List.of_seq
+  in
+  (* Collect children from both sides that cover overlapping key ranges.
+     We track the max boundary key seen on each side (lmax/rmax) and keep
+     advancing the side with the smaller max boundary until they align
+     or both are exhausted. *)
+  let rec collect lmax rmax lacc racc lrest rrest =
+    if lacc <> [] && racc <> [] && lmax = rmax then
+      (* Boundaries aligned *)
+      (List.rev lacc, List.rev racc, lrest, rrest)
+    else
+      (* Advance the side with the smaller max boundary *)
+      let advance_left =
+        match lrest with
+        | [] -> false
+        | _ -> rmax = "" || lmax < rmax || (lmax = rmax && racc = [])
+      in
+      let advance_right =
+        (not advance_left) &&
+        match rrest with
+        | [] -> false
+        | _ -> true
+      in
+      if advance_left then
+        match lrest with
+        | (lh : Chunk.internal_entry) :: lt ->
+          collect lh.key rmax (lh :: lacc) racc lt rrest
+        | [] -> assert false
+      else if advance_right then
+        match rrest with
+        | (rh : Chunk.internal_entry) :: rt ->
+          collect lmax rh.key lacc (rh :: racc) lrest rt
+        | [] -> assert false
+      else
+        (* Both exhausted or nothing more to advance *)
+        (List.rev lacc, List.rev racc, lrest, rrest)
+  in
   let rec go left right () =
     match left, right with
     | [], [] -> Seq.Nil
@@ -64,16 +107,18 @@ and merge_internals store left right =
       let removed = emit_all_as `Removed store e.child in
       seq_append removed (go rest []) ()
     | (l : Chunk.internal_entry) :: ls, (r : Chunk.internal_entry) :: rs ->
-      let cmp = String.compare l.key r.key in
-      if cmp < 0 then
-        let removed = emit_all_as `Removed store l.child in
-        seq_append removed (go ls right) ()
-      else if cmp > 0 then
-        let added = emit_all_as `Added store r.child in
-        seq_append added (go left rs) ()
-      else
+      if String.compare l.key r.key = 0 then
         let child_diff = diff_nodes store l.child r.child in
         seq_append child_diff (go ls rs) ()
+      else begin
+        let lacc, racc, lrest, rrest =
+          collect "" "" [] [] (l :: ls) (r :: rs)
+        in
+        let left_leaves = flatten_children store lacc in
+        let right_leaves = flatten_children store racc in
+        let diff_seq = merge_leaves left_leaves right_leaves in
+        seq_append diff_seq (go lrest rrest) ()
+      end
   in
   go left right
 

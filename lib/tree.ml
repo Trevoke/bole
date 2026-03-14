@@ -287,7 +287,7 @@ let put ?(target_size = default_target_size) store root key value =
       | (e : Chunk.leaf_entry) :: rest when e.key = key ->
         List.rev_append (({ Chunk.key; value } : Chunk.leaf_entry) :: acc) rest
       | (e : Chunk.leaf_entry) :: rest when e.key > key ->
-        List.rev_append (({ Chunk.key; value } : Chunk.leaf_entry) :: e :: acc) rest
+        List.rev_append (e :: ({ Chunk.key; value } : Chunk.leaf_entry) :: acc) rest
       | e :: rest -> insert_sorted (e :: acc) rest
     in
     insert_sorted [] leaf_entries)
