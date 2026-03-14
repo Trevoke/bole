@@ -131,6 +131,158 @@ let test_key_ordering () =
   let sorted = List.sort String.compare keys in
   Alcotest.(check (list string)) "all entries in key order" sorted keys
 
+let diff_entry_key = function
+  | Bole.Diff.Added (k, _) -> k
+  | Bole.Diff.Removed (k, _) -> k
+  | Bole.Diff.Modified (k, _, _) -> k
+
+let prop_diff_completeness =
+  QCheck2.Test.make ~name:"diff captures exactly the applied changes"
+    ~count:20
+    QCheck2.Gen.(pair
+      (list_size (int_range 10 80)
+        (pair
+          (string_size ~gen:printable (int_range 1 10))
+          (string_size ~gen:printable (int_range 1 10))))
+      (list_size (int_range 1 20)
+        (pair
+          (string_size ~gen:printable (int_range 1 10))
+          (string_size ~gen:printable (int_range 1 10)))))
+    (fun (initial_pairs, mutations) ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) initial_pairs in
+       if List.length sorted < 5 then true
+       else begin
+         let store = Bole.Store.create () in
+         let root_a = Bole.Tree.build ~target_size:20 store (List.to_seq sorted) in
+         (* Apply mutations: treat each as a put *)
+         let root_b = List.fold_left (fun r (k, v) ->
+           Bole.Tree.put ~target_size:20 store r k v
+         ) root_a mutations in
+         let diff_entries = Bole.Diff.diff store ~from:root_a ~to_:root_b
+           |> List.of_seq in
+         (* Every diff entry should reflect a real difference *)
+         List.for_all (fun e ->
+           match e with
+           | Bole.Diff.Added (k, v) ->
+             Bole.Tree.find store root_a k = None
+             && Bole.Tree.find store root_b k = Some v
+           | Bole.Diff.Removed (k, v) ->
+             Bole.Tree.find store root_a k = Some v
+             && Bole.Tree.find store root_b k = None
+           | Bole.Diff.Modified (k, old_v, new_v) ->
+             Bole.Tree.find store root_a k = Some old_v
+             && Bole.Tree.find store root_b k = Some new_v
+             && old_v <> new_v
+         ) diff_entries
+         (* And every actual difference should appear in the diff *)
+         && begin
+           let all_keys = List.sort_uniq String.compare
+             (List.map fst sorted @ List.map fst mutations) in
+           List.for_all (fun k ->
+             let in_a = Bole.Tree.find store root_a k in
+             let in_b = Bole.Tree.find store root_b k in
+             match in_a, in_b with
+             | None, None -> true
+             | Some _, None ->
+               List.exists (fun e -> diff_entry_key e = k) diff_entries
+             | None, Some _ ->
+               List.exists (fun e -> diff_entry_key e = k) diff_entries
+             | Some va, Some vb ->
+               if va = vb then
+                 not (List.exists (fun e -> diff_entry_key e = k) diff_entries)
+               else
+                 List.exists (fun e -> diff_entry_key e = k) diff_entries
+           ) all_keys
+         end
+       end)
+
+let prop_diff_symmetry =
+  QCheck2.Test.make ~name:"diff from/to is mirror of diff to/from"
+    ~count:20
+    QCheck2.Gen.(list_size (int_range 5 50)
+      (pair
+        (string_size ~gen:printable (int_range 1 10))
+        (string_size ~gen:printable (int_range 1 10))))
+    (fun pairs ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) pairs in
+       if List.length sorted < 3 then true
+       else begin
+         let n = List.length sorted in
+         let half = n / 2 in
+         let pairs_a = List.filteri (fun i _ -> i < half + half / 2) sorted in
+         let pairs_b = List.filteri (fun i _ -> i >= half / 2) sorted in
+         (* Modify some overlapping values *)
+         let pairs_b = List.map (fun (k, v) ->
+           if String.length k > 0 && Char.code k.[0] mod 3 = 0
+           then (k, v ^ "-modified")
+           else (k, v)
+         ) pairs_b in
+         let pairs_b = List.sort_uniq (fun (k1, _) (k2, _) ->
+           String.compare k1 k2) pairs_b in
+         let store = Bole.Store.create () in
+         let root_a = Bole.Tree.build ~target_size:20 store (List.to_seq pairs_a) in
+         let root_b = Bole.Tree.build ~target_size:20 store (List.to_seq pairs_b) in
+         let forward = Bole.Diff.diff store ~from:root_a ~to_:root_b
+           |> List.of_seq in
+         let backward = Bole.Diff.diff store ~from:root_b ~to_:root_a
+           |> List.of_seq in
+         let mirror = function
+           | Bole.Diff.Added (k, v) -> Bole.Diff.Removed (k, v)
+           | Bole.Diff.Removed (k, v) -> Bole.Diff.Added (k, v)
+           | Bole.Diff.Modified (k, o, n) -> Bole.Diff.Modified (k, n, o)
+         in
+         let mirrored = List.map mirror forward in
+         List.length mirrored = List.length backward
+         && List.for_all2 (fun a b ->
+           diff_entry_key a = diff_entry_key b && a = b
+         ) (List.sort (fun a b ->
+              String.compare (diff_entry_key a) (diff_entry_key b)) mirrored)
+            (List.sort (fun a b ->
+              String.compare (diff_entry_key a) (diff_entry_key b)) backward)
+       end)
+
+let prop_apply_diff_round_trip =
+  QCheck2.Test.make ~name:"applying diff to source produces target"
+    ~count:20
+    QCheck2.Gen.(pair
+      (list_size (int_range 10 80)
+        (pair
+          (string_size ~gen:printable (int_range 1 10))
+          (string_size ~gen:printable (int_range 1 10))))
+      (list_size (int_range 1 15)
+        (pair
+          (string_size ~gen:printable (int_range 1 10))
+          (string_size ~gen:printable (int_range 1 10)))))
+    (fun (initial_pairs, mutations) ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) initial_pairs in
+       if List.length sorted < 5 then true
+       else begin
+         let store = Bole.Store.create () in
+         let root_a = Bole.Tree.build ~target_size:20 store (List.to_seq sorted) in
+         let root_b = List.fold_left (fun r (k, v) ->
+           Bole.Tree.put ~target_size:20 store r k v
+         ) root_a mutations in
+         let diff_entries = Bole.Diff.diff store ~from:root_a ~to_:root_b
+           |> List.of_seq in
+         (* Apply diff to root_a *)
+         let root_applied = List.fold_left (fun r e ->
+           match e with
+           | Bole.Diff.Added (k, v) ->
+             Bole.Tree.put ~target_size:20 store r k v
+           | Bole.Diff.Removed (k, _) ->
+             Bole.Tree.delete ~target_size:20 store r k
+           | Bole.Diff.Modified (k, _, new_v) ->
+             Bole.Tree.put ~target_size:20 store r k new_v
+         ) root_a diff_entries in
+         (* root_applied should have same contents as root_b *)
+         let entries_applied = Bole.Tree.range store root_applied |> List.of_seq in
+         let entries_b = Bole.Tree.range store root_b |> List.of_seq in
+         entries_applied = entries_b
+       end)
+
 let tests =
   [ "diff", [
       Alcotest.test_case "identical trees" `Quick test_identical_trees;
@@ -141,5 +293,8 @@ let tests =
       Alcotest.test_case "multiple changes" `Quick test_multiple_changes;
       Alcotest.test_case "multi-chunk diff" `Quick test_multi_chunk_diff;
       Alcotest.test_case "key ordering" `Quick test_key_ordering;
+      QCheck_alcotest.to_alcotest prop_diff_completeness;
+      QCheck_alcotest.to_alcotest prop_diff_symmetry;
+      QCheck_alcotest.to_alcotest prop_apply_diff_round_trip;
     ]
   ]
