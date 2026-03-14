@@ -199,6 +199,110 @@ let prop_find_round_trip =
        &&
        Bole.Tree.find store root "\xff\xff\xff" = None)
 
+let test_range_full_scan () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  let result = Bole.Tree.range store root |> List.of_seq in
+  Alcotest.(check (list (pair string string))) "full scan"
+    pairs result
+
+let test_range_empty_tree () =
+  let store = Bole.Store.create () in
+  let root = Bole.Tree.build store Seq.empty in
+  let result = Bole.Tree.range store root |> List.of_seq in
+  Alcotest.(check (list (pair string string))) "empty range"
+    [] result
+
+let test_range_start_key () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  let result = Bole.Tree.range ~start_key:"key-00100" store root
+    |> List.of_seq in
+  let expected = List.filteri (fun i _ -> i >= 100) pairs in
+  Alcotest.(check int) "start_key count" 100 (List.length result);
+  Alcotest.(check (list (pair string string))) "start_key entries"
+    expected result
+
+let test_range_end_key () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  let result = Bole.Tree.range ~end_key:"key-00050" store root
+    |> List.of_seq in
+  let expected = List.filteri (fun i _ -> i < 50) pairs in
+  Alcotest.(check int) "end_key count" 50 (List.length result);
+  Alcotest.(check (list (pair string string))) "end_key entries"
+    expected result
+
+let test_range_both_bounds () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  let result = Bole.Tree.range ~start_key:"key-00050"
+    ~end_key:"key-00100" store root |> List.of_seq in
+  let expected = List.filteri (fun i _ -> i >= 50 && i < 100) pairs in
+  Alcotest.(check int) "both bounds count" 50 (List.length result);
+  Alcotest.(check (list (pair string string))) "both bounds entries"
+    expected result
+
+let test_range_empty_result () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 10 (fun i ->
+    (Printf.sprintf "key-%03d" i, Printf.sprintf "val-%03d" i)) in
+  let root = Bole.Tree.build ~target_size:200 store (List.to_seq pairs) in
+  let result = Bole.Tree.range ~start_key:"zzz" store root
+    |> List.of_seq in
+  Alcotest.(check (list (pair string string))) "empty range" [] result
+
+let prop_range_full_scan =
+  QCheck2.Test.make ~name:"range full scan equals input"
+    ~count:20
+    QCheck2.Gen.(list_size (int_range 0 300)
+      (pair
+        (string_size ~gen:printable (int_range 1 20))
+        (string_size ~gen:printable (int_range 0 50))))
+    (fun pairs ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) pairs in
+       let store = Bole.Store.create () in
+       let root = Bole.Tree.build ~target_size:20 store
+         (List.to_seq sorted) in
+       let result = Bole.Tree.range store root |> List.of_seq in
+       result = sorted)
+
+let prop_range_bounds_filter =
+  QCheck2.Test.make ~name:"range with bounds equals list filter"
+    ~count:20
+    QCheck2.Gen.(list_size (int_range 10 200)
+      (pair
+        (string_size ~gen:printable (int_range 1 20))
+        (string_size ~gen:printable (int_range 0 50))))
+    (fun pairs ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) pairs in
+       if List.length sorted < 3 then true
+       else begin
+         let store = Bole.Store.create () in
+         let root = Bole.Tree.build ~target_size:20 store
+           (List.to_seq sorted) in
+         let n = List.length sorted in
+         let start_idx = n / 4 in
+         let end_idx = 3 * n / 4 in
+         let start_key = fst (List.nth sorted start_idx) in
+         let end_key = fst (List.nth sorted end_idx) in
+         let result = Bole.Tree.range ~start_key ~end_key store root
+           |> List.of_seq in
+         let expected = List.filter (fun (k, _) ->
+           k >= start_key && k < end_key) sorted in
+         result = expected
+       end)
+
 let tests =
   [ "tree", [
       Alcotest.test_case "empty tree" `Quick test_empty_tree;
@@ -215,5 +319,13 @@ let tests =
       Alcotest.test_case "find in empty tree" `Quick test_find_empty_tree;
       Alcotest.test_case "find in multi-chunk tree" `Quick test_find_multi_chunk;
       QCheck_alcotest.to_alcotest prop_find_round_trip;
+      Alcotest.test_case "range full scan" `Quick test_range_full_scan;
+      Alcotest.test_case "range on empty tree" `Quick test_range_empty_tree;
+      Alcotest.test_case "range with start_key" `Quick test_range_start_key;
+      Alcotest.test_case "range with end_key" `Quick test_range_end_key;
+      Alcotest.test_case "range with both bounds" `Quick test_range_both_bounds;
+      Alcotest.test_case "range empty result" `Quick test_range_empty_result;
+      QCheck_alcotest.to_alcotest prop_range_full_scan;
+      QCheck_alcotest.to_alcotest prop_range_bounds_filter;
     ]
   ]
