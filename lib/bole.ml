@@ -5,3 +5,4 @@ module Store = Store
 module Chunk = Chunk
 module Chunker = Chunker
 module Tree = Tree
+module Diff = Diff

@@ -6,4 +6,5 @@ let () =
        ; Test_chunk.tests
        ; Test_chunker.tests
        ; Test_tree.tests
+       ; Test_diff.tests
        ])
