@@ -159,6 +159,44 @@ let test_multi_table_commit () =
   Alcotest.(check (option string)) "old posts restored"
     (Some "hello") (Bole.Db.find old ~table:"posts" ~key:"post-1")
 
+(* --- Test 8: Int64 key ordering --- *)
+
+let test_int64_key_ordering () =
+  let db = Bole.Db.create () in
+  let put db n v =
+    Bole.Db.put db ~table:"scores"
+      ~key:(Bole.Tuple.encode [Bole.Tuple.Int64 n])
+      ~value:v
+  in
+  let db = put db 9L "nine" in
+  let db = put db 10L "ten" in
+  let db = put db 2L "two" in
+  let db = put db 100L "hundred" in
+  let db = put db (-1L) "neg-one" in
+  let db = put db 0L "zero" in
+  let all = Bole.Db.range db ~table:"scores" |> List.of_seq in
+  let values = List.map snd all in
+  Alcotest.(check (list string)) "numeric order"
+    ["neg-one"; "zero"; "two"; "nine"; "ten"; "hundred"] values
+
+(* --- Test 9: Composite key ordering --- *)
+
+let test_composite_key_ordering () =
+  let db = Bole.Db.create () in
+  let put db s n v =
+    Bole.Db.put db ~table:"t"
+      ~key:(Bole.Tuple.encode [Bole.Tuple.String s; Bole.Tuple.Int64 n])
+      ~value:v
+  in
+  let db = put db "bob" 2L "bob-2" in
+  let db = put db "alice" 10L "alice-10" in
+  let db = put db "alice" 2L "alice-2" in
+  let db = put db "bob" 1L "bob-1" in
+  let all = Bole.Db.range db ~table:"t" |> List.of_seq in
+  let values = List.map snd all in
+  Alcotest.(check (list string)) "composite order"
+    ["alice-2"; "alice-10"; "bob-1"; "bob-2"] values
+
 (* --- Registration --- *)
 
 let tests =
@@ -170,5 +208,7 @@ let tests =
       Alcotest.test_case "clean merge" `Quick test_clean_merge;
       Alcotest.test_case "conflicting merge" `Quick test_conflicting_merge;
       Alcotest.test_case "multi-table commits" `Quick test_multi_table_commit;
+      Alcotest.test_case "int64 key ordering" `Quick test_int64_key_ordering;
+      Alcotest.test_case "composite key ordering" `Quick test_composite_key_ordering;
     ]
   ]
