@@ -21,5 +21,8 @@ val of_raw_string : string -> t
 (** Hex-encoded digest for display/debugging. *)
 val to_hex : t -> string
 
+(** Construct from hex-encoded string. Raises [Invalid_argument] if malformed. *)
+val of_hex : string -> t
+
 (** Digest size in bytes. Always 32. *)
 val hash_size : int

@@ -20,6 +20,14 @@ type merge_result = {
 
 val create : unit -> t
 val store : t -> Store.t
+val current_branch : t -> string
+val branch_heads : t -> (string * Hash.t) list
+val of_parts :
+  store:Store.t ->
+  branches:(string * Hash.t) list ->
+  current_branch:string ->
+  head_commit:Hash.t option ->
+  t
 val put : t -> table:string -> key:string -> value:string -> t
 val delete : t -> table:string -> key:string -> t
 val find : t -> table:string -> key:string -> string option
