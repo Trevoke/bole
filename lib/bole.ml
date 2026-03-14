@@ -8,3 +8,4 @@ module Tree = Tree
 module Diff = Diff
 module Db_state = Db_state
 module Commit = Commit
+module Db = Db

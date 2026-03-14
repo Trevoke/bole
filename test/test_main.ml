@@ -10,5 +10,5 @@ let () =
        ; Test_perf.tests
        ; Test_db_state.tests
        ; Test_commit.tests
-       (* ; Test_acceptance.tests  -- uncomment when Db module exists *)
+       ; Test_acceptance.tests
        ])
