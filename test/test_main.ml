@@ -8,6 +8,7 @@ let () =
        ; Test_tree.tests
        ; Test_diff.tests
        ; Test_perf.tests
+       ; Test_file_store.tests
        ; Test_db_state.tests
        ; Test_commit.tests
        ; Test_merge.tests

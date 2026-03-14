@@ -1,10 +1,13 @@
-(** In-memory content-addressed chunk store. *)
+(** Content-addressed chunk store with optional file persistence. *)
 
 (** The store type. *)
 type t
 
-(** [create ()] returns a fresh empty store. *)
-val create : unit -> t
+(** [create ?path ()] returns a fresh store.
+    If [path] is provided, objects are persisted to that directory
+    using git-style 2-char prefix subdirectories (e.g. ab/cdef...).
+    If [path] is omitted, the store is purely in-memory. *)
+val create : ?path:string -> unit -> t
 
 (** [put store data] stores [data] and returns its content hash.
     Idempotent: storing the same data twice is a no-op. *)
