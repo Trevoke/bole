@@ -105,4 +105,106 @@ let diff db ~from ~to_ ~table =
   let from_root = table_root_from_commit db from table in
   let to_root = table_root_from_commit db to_ table in
   Diff.diff db.store ~from:from_root ~to_:to_root
-let merge _db ~ours:_ ~theirs:_ = failwith "not implemented"
+let load_tables db commit_hash =
+  let commit_data = Store.get db.store commit_hash in
+  let commit_obj = Commit.decode commit_data in
+  let state_data = Store.get db.store commit_obj.state in
+  let entries = Db_state.decode state_data in
+  List.fold_left (fun acc (e : Db_state.table_entry) ->
+    StringMap.add e.name e.root acc
+  ) StringMap.empty entries
+
+let find_ancestor db h1 h2 =
+  if Hash.equal h1 h2 then h1
+  else begin
+    let module HashSet = Set.Make(struct
+      type t = Hash.t
+      let compare = Hash.compare
+    end) in
+    let seen1 = ref (HashSet.singleton h1) in
+    let seen2 = ref (HashSet.singleton h2) in
+    let queue1 = Queue.create () in
+    let queue2 = Queue.create () in
+    Queue.push h1 queue1;
+    Queue.push h2 queue2;
+    let found = ref None in
+    while !found = None && (not (Queue.is_empty queue1) || not (Queue.is_empty queue2)) do
+      if not (Queue.is_empty queue1) then begin
+        let h = Queue.pop queue1 in
+        let ps = parents db h in
+        List.iter (fun p ->
+          if HashSet.mem p !seen2 then found := Some p
+          else if not (HashSet.mem p !seen1) then begin
+            seen1 := HashSet.add p !seen1;
+            Queue.push p queue1
+          end
+        ) ps
+      end;
+      if !found = None && not (Queue.is_empty queue2) then begin
+        let h = Queue.pop queue2 in
+        let ps = parents db h in
+        List.iter (fun p ->
+          if HashSet.mem p !seen1 then found := Some p
+          else if not (HashSet.mem p !seen2) then begin
+            seen2 := HashSet.add p !seen2;
+            Queue.push p queue2
+          end
+        ) ps
+      end
+    done;
+    match !found with
+    | Some h -> h
+    | None -> raise Not_found
+  end
+
+let merge db ~ours ~theirs =
+  let ours_hash = Hashtbl.find db.branches ours in
+  let theirs_hash = Hashtbl.find db.branches theirs in
+  let ancestor_hash = find_ancestor db ours_hash theirs_hash in
+  let ancestor_tables = load_tables db ancestor_hash in
+  let ours_tables = load_tables db ours_hash in
+  let theirs_tables = load_tables db theirs_hash in
+  let empty_root = empty_tree_root db.store in
+  (* Collect union of all table names *)
+  let all_names =
+    StringMap.union (fun _ a _ -> Some a) ancestor_tables ours_tables
+    |> StringMap.union (fun _ a _ -> Some a) theirs_tables
+  in
+  let merged_tables = ref StringMap.empty in
+  let all_conflicts = ref [] in
+  StringMap.iter (fun name _ ->
+    let a_root = match StringMap.find_opt name ancestor_tables with
+      | Some r -> r | None -> empty_root in
+    let o_root = match StringMap.find_opt name ours_tables with
+      | Some r -> r | None -> empty_root in
+    let t_root = match StringMap.find_opt name theirs_tables with
+      | Some r -> r | None -> empty_root in
+    if Hash.equal o_root t_root then
+      merged_tables := StringMap.add name o_root !merged_tables
+    else if Hash.equal o_root a_root then
+      merged_tables := StringMap.add name t_root !merged_tables
+    else if Hash.equal t_root a_root then
+      merged_tables := StringMap.add name o_root !merged_tables
+    else begin
+      let ours_diff = Diff.diff db.store ~from:a_root ~to_:o_root in
+      let theirs_diff = Diff.diff db.store ~from:a_root ~to_:t_root in
+      let result = Merge.three_way ~ours:ours_diff ~theirs:theirs_diff in
+      let final_root = List.fold_left (fun root change ->
+        match change with
+        | Merge.Put (k, v) -> Tree.put db.store root k v
+        | Merge.Delete k -> Tree.delete db.store root k
+      ) o_root result.Merge.changes in
+      merged_tables := StringMap.add name final_root !merged_tables;
+      List.iter (fun (c : Merge.conflict) ->
+        all_conflicts := {
+          table = name;
+          key = c.key;
+          base = c.base;
+          ours = c.ours;
+          theirs = c.theirs;
+        } :: !all_conflicts
+      ) result.Merge.conflicts
+    end
+  ) all_names;
+  { db = { db with tables = !merged_tables };
+    conflicts = List.rev !all_conflicts }
