@@ -125,9 +125,9 @@ let test_conflicting_merge () =
   let c = List.hd result.Bole.Db.conflicts in
   Alcotest.(check string) "conflict table" "users" c.Bole.Db.table;
   Alcotest.(check string) "conflict key" "alice" c.Bole.Db.key;
-  Alcotest.(check string) "conflict base" "v1" c.Bole.Db.base;
-  Alcotest.(check string) "conflict ours" "v3" c.Bole.Db.ours;
-  Alcotest.(check string) "conflict theirs" "v2" c.Bole.Db.theirs
+  Alcotest.(check (option string)) "conflict base" (Some "v1") c.Bole.Db.base;
+  Alcotest.(check (option string)) "conflict ours" (Some "v3") c.Bole.Db.ours;
+  Alcotest.(check (option string)) "conflict theirs" (Some "v2") c.Bole.Db.theirs
 
 (* --- Test 7: Multi-table commits --- *)
 

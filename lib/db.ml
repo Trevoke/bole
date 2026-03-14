@@ -10,9 +10,9 @@ type t = {
 type conflict = {
   table : string;
   key : string;
-  base : string;
-  ours : string;
-  theirs : string;
+  base : string option;
+  ours : string option;
+  theirs : string option;
 }
 
 type merge_result = {
