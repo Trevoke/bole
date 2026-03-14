@@ -53,9 +53,36 @@ let find db ~table ~key =
   | None -> None
   | Some root -> Tree.find db.store root key
 
-let commit _db ~message:_ = failwith "not implemented"
-let checkout _db _h = failwith "not implemented"
-let parents _db _h = failwith "not implemented"
+let commit db ~message =
+  let entries = StringMap.fold (fun name root acc ->
+    Db_state.{ name; root } :: acc
+  ) db.tables [] in
+  let state_data = Db_state.encode entries in
+  let state_hash = Store.put db.store state_data in
+  let parents = match Hashtbl.find_opt db.branches db.current_branch with
+    | Some h -> [h]
+    | None -> []
+  in
+  let commit_obj = Commit.{ state = state_hash; parents; message } in
+  let commit_data = Commit.encode commit_obj in
+  let commit_hash = Store.put db.store commit_data in
+  Hashtbl.replace db.branches db.current_branch commit_hash;
+  (commit_hash, db)
+
+let checkout db commit_hash =
+  let commit_data = Store.get db.store commit_hash in
+  let commit_obj = Commit.decode commit_data in
+  let state_data = Store.get db.store commit_obj.state in
+  let entries = Db_state.decode state_data in
+  let tables = List.fold_left (fun acc (e : Db_state.table_entry) ->
+    StringMap.add e.name e.root acc
+  ) StringMap.empty entries in
+  { db with tables }
+
+let parents db commit_hash =
+  let commit_data = Store.get db.store commit_hash in
+  let commit_obj = Commit.decode commit_data in
+  commit_obj.parents
 let branch _db ~name:_ = failwith "not implemented"
 let switch _db ~name:_ = failwith "not implemented"
 let diff _db ~from:_ ~to_:_ ~table:_ = failwith "not implemented"
