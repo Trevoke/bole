@@ -83,7 +83,14 @@ let parents db commit_hash =
   let commit_data = Store.get db.store commit_hash in
   let commit_obj = Commit.decode commit_data in
   commit_obj.parents
-let branch _db ~name:_ = failwith "not implemented"
-let switch _db ~name:_ = failwith "not implemented"
+let branch db ~name =
+  let head = Hashtbl.find db.branches db.current_branch in
+  Hashtbl.replace db.branches name head;
+  { db with current_branch = name }
+
+let switch db ~name =
+  let commit_hash = Hashtbl.find db.branches name in
+  let db = checkout db commit_hash in
+  { db with current_branch = name }
 let diff _db ~from:_ ~to_:_ ~table:_ = failwith "not implemented"
 let merge _db ~ours:_ ~theirs:_ = failwith "not implemented"
