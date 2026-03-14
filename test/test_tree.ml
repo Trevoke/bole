@@ -348,13 +348,13 @@ let test_put_multi_chunk () =
   let pairs = List.init 200 (fun i ->
     (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
   let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
-  let root' = Bole.Tree.put store root "key-00000a" "inserted-begin" in
+  let root' = Bole.Tree.put ~target_size:20 store root "key-00000a" "inserted-begin" in
   Alcotest.(check (option string)) "inserted at begin"
     (Some "inserted-begin") (Bole.Tree.find store root' "key-00000a");
-  let root'' = Bole.Tree.put store root' "key-00100a" "inserted-mid" in
+  let root'' = Bole.Tree.put ~target_size:20 store root' "key-00100a" "inserted-mid" in
   Alcotest.(check (option string)) "inserted at mid"
     (Some "inserted-mid") (Bole.Tree.find store root'' "key-00100a");
-  let root''' = Bole.Tree.put store root'' "key-00050" "updated" in
+  let root''' = Bole.Tree.put ~target_size:20 store root'' "key-00050" "updated" in
   Alcotest.(check (option string)) "updated value"
     (Some "updated") (Bole.Tree.find store root''' "key-00050");
   Alcotest.(check (option string)) "original intact"
@@ -393,9 +393,9 @@ let test_delete_multi_chunk () =
   let pairs = List.init 200 (fun i ->
     (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
   let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
-  let root' = Bole.Tree.delete store root "key-00000" in
-  let root'' = Bole.Tree.delete store root' "key-00100" in
-  let root''' = Bole.Tree.delete store root'' "key-00199" in
+  let root' = Bole.Tree.delete ~target_size:20 store root "key-00000" in
+  let root'' = Bole.Tree.delete ~target_size:20 store root' "key-00100" in
+  let root''' = Bole.Tree.delete ~target_size:20 store root'' "key-00199" in
   Alcotest.(check (option string)) "first deleted"
     None (Bole.Tree.find store root''' "key-00000");
   Alcotest.(check (option string)) "middle deleted"
