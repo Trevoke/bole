@@ -14,3 +14,7 @@ val build :
   Store.t ->
   (string * string) Seq.t ->
   Hash.t
+
+(** [find store root key] looks up [key] in the tree rooted at [root].
+    Returns [Some value] if the key exists, [None] otherwise. *)
+val find : Store.t -> Hash.t -> string -> string option

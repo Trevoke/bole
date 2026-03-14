@@ -144,6 +144,61 @@ let test_duplicate_keys_allowed () =
   Alcotest.(check (list (pair string string))) "entries in order"
     [("a", "1"); ("a", "2"); ("b", "3")] recovered
 
+let test_find_existing () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 10 (fun i ->
+    (Printf.sprintf "key-%03d" i, Printf.sprintf "val-%03d" i)) in
+  let root = Bole.Tree.build ~target_size:200 store (List.to_seq pairs) in
+  Alcotest.(check (option string)) "find key-005"
+    (Some "val-005") (Bole.Tree.find store root "key-005")
+
+let test_find_missing () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 10 (fun i ->
+    (Printf.sprintf "key-%03d" i, Printf.sprintf "val-%03d" i)) in
+  let root = Bole.Tree.build ~target_size:200 store (List.to_seq pairs) in
+  Alcotest.(check (option string)) "find nonexistent"
+    None (Bole.Tree.find store root "zzz")
+
+let test_find_empty_tree () =
+  let store = Bole.Store.create () in
+  let root = Bole.Tree.build store Seq.empty in
+  Alcotest.(check (option string)) "find in empty"
+    None (Bole.Tree.find store root "anything")
+
+let test_find_multi_chunk () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  Alcotest.(check (option string)) "find first"
+    (Some "val-00000") (Bole.Tree.find store root "key-00000");
+  Alcotest.(check (option string)) "find middle"
+    (Some "val-00100") (Bole.Tree.find store root "key-00100");
+  Alcotest.(check (option string)) "find last"
+    (Some "val-00199") (Bole.Tree.find store root "key-00199");
+  Alcotest.(check (option string)) "find missing in multi"
+    None (Bole.Tree.find store root "key-00200")
+
+let prop_find_round_trip =
+  QCheck2.Test.make ~name:"find returns correct value for all inserted keys"
+    ~count:20
+    QCheck2.Gen.(list_size (int_range 1 300)
+      (pair
+        (string_size ~gen:printable (int_range 1 20))
+        (string_size ~gen:printable (int_range 0 50))))
+    (fun pairs ->
+       let sorted = List.sort_uniq (fun (k1, _) (k2, _) ->
+         String.compare k1 k2) pairs in
+       let store = Bole.Store.create () in
+       let root = Bole.Tree.build ~target_size:20 store
+         (List.to_seq sorted) in
+       List.for_all (fun (k, v) ->
+         Bole.Tree.find store root k = Some v
+       ) sorted
+       &&
+       Bole.Tree.find store root "\xff\xff\xff" = None)
+
 let tests =
   [ "tree", [
       Alcotest.test_case "empty tree" `Quick test_empty_tree;
@@ -155,5 +210,10 @@ let tests =
       QCheck_alcotest.to_alcotest prop_round_trip;
       QCheck_alcotest.to_alcotest prop_history_independence;
       QCheck_alcotest.to_alcotest prop_level_independence;
+      Alcotest.test_case "find existing" `Quick test_find_existing;
+      Alcotest.test_case "find missing" `Quick test_find_missing;
+      Alcotest.test_case "find in empty tree" `Quick test_find_empty_tree;
+      Alcotest.test_case "find in multi-chunk tree" `Quick test_find_multi_chunk;
+      QCheck_alcotest.to_alcotest prop_find_round_trip;
     ]
   ]

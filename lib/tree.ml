@@ -84,3 +84,27 @@ let build ?(target_size = 64) store pairs =
          level := !level + 1)
     done;
     !result
+
+let find store root key =
+  let rec descend h =
+    let data = Store.get store h in
+    let chunk = Chunk.decode data in
+    match chunk with
+    | Chunk.Leaf entries ->
+      let rec scan = function
+        | [] -> None
+        | (e : Chunk.leaf_entry) :: rest ->
+          if e.key = key then Some e.value
+          else scan rest
+      in
+      scan entries
+    | Chunk.Internal entries ->
+      let rec find_child = function
+        | [] -> None
+        | (e : Chunk.internal_entry) :: _ when e.key >= key ->
+          descend e.child
+        | _ :: rest -> find_child rest
+      in
+      find_child entries
+  in
+  descend root
