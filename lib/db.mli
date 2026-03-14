@@ -40,4 +40,5 @@ val parents : t -> Hash.t -> Hash.t list
 val branch : t -> name:string -> t
 val switch : t -> name:string -> t
 val diff : t -> from:Hash.t -> to_:Hash.t -> table:string -> Diff.entry Seq.t
+val range : t -> table:string -> (string * string) Seq.t
 val merge : t -> ours:string -> theirs:string -> merge_result

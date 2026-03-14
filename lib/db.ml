@@ -83,6 +83,11 @@ let find db ~table ~key =
   | None -> None
   | Some root -> Tree.find db.store root key
 
+let range db ~table =
+  match StringMap.find_opt table db.tables with
+  | None -> Seq.empty
+  | Some root -> Tree.range db.store root
+
 let commit db ~message =
   let entries = StringMap.fold (fun name root acc ->
     Db_state.{ name; root } :: acc
