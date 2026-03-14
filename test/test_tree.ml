@@ -422,13 +422,13 @@ let prop_mutation_history_independence =
        if List.length sorted < 3 then true
        else begin
          let store1 = Bole.Store.create () in
-         let root_bulk = Bole.Tree.build store1
+         let root_bulk = Bole.Tree.build ~target_size:20 store1
            (List.to_seq sorted) in
          let store2 = Bole.Store.create () in
-         let root_empty = Bole.Tree.build store2
+         let root_empty = Bole.Tree.build ~target_size:20 store2
            Seq.empty in
          let root_mut = List.fold_left (fun r (k, v) ->
-           Bole.Tree.put store2 r k v
+           Bole.Tree.put ~target_size:20 store2 r k v
          ) root_empty sorted in
          Bole.Hash.equal root_bulk root_mut
        end)

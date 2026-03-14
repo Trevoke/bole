@@ -36,11 +36,16 @@ val range :
   Hash.t ->
   (string * string) Seq.t
 
-(** [put store root key value] returns a new root hash with [key]
+(** [put ?target_size store root key value] returns a new root hash with [key]
     mapped to [value]. If [key] already exists, its value is replaced.
-    The old tree remains accessible via its original root hash. *)
-val put : Store.t -> Hash.t -> string -> string -> Hash.t
+    The old tree remains accessible via its original root hash.
 
-(** [delete store root key] returns a new root hash with [key] removed.
+    @param target_size must match the value used to build the tree (default 64). *)
+val put : ?target_size:int -> Store.t -> Hash.t -> string -> string -> Hash.t
+
+(** [delete ?target_size store root key] returns a new root hash with [key]
+    removed.
+
+    @param target_size must match the value used to build the tree (default 64).
     @raise Not_found if [key] does not exist in the tree. *)
-val delete : Store.t -> Hash.t -> string -> Hash.t
+val delete : ?target_size:int -> Store.t -> Hash.t -> string -> Hash.t

@@ -238,7 +238,7 @@ type mut_frame = {
   child_index : int;
 }
 
-let put store root key value =
+let put ?(target_size = default_target_size) store root key value =
   let rec descend h path =
     let data = Store.get store h in
     let chunk = Chunk.decode data in
@@ -269,7 +269,6 @@ let put store root key value =
   in
   let new_entries = insert_sorted [] leaf_entries in
 
-  let target_size = default_target_size in
   let parent_entries = chunk_leaf_entries ~target_size store new_entries in
 
   let rec propagate path entries level =
@@ -291,7 +290,7 @@ let put store root key value =
   in
   propagate path parent_entries 1
 
-let delete store root key =
+let delete ?(target_size = default_target_size) store root key =
   let rec descend h path =
     let data = Store.get store h in
     let chunk = Chunk.decode data in
@@ -322,7 +321,6 @@ let delete store root key =
   in
   let new_entries = remove false [] leaf_entries in
 
-  let target_size = default_target_size in
   let parent_entries = chunk_leaf_entries ~target_size store new_entries in
 
   let rec propagate path entries level =
