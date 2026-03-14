@@ -50,6 +50,20 @@ let prop_content_addressing =
        let h2 = Bole.Store.put s2 data in
        Bole.Hash.equal h1 h2)
 
+let test_stats () =
+  let store = Bole.Store.create () in
+  Alcotest.(check int) "initial get_count" 0 (Bole.Store.get_count store);
+  Alcotest.(check int) "initial put_count" 0 (Bole.Store.put_count store);
+  let h = Bole.Store.put store "data" in
+  Alcotest.(check int) "put_count after put" 1 (Bole.Store.put_count store);
+  let _ = Bole.Store.get store h in
+  Alcotest.(check int) "get_count after get" 1 (Bole.Store.get_count store);
+  let _ = Bole.Store.get store h in
+  Alcotest.(check int) "get_count after second get" 2 (Bole.Store.get_count store);
+  Bole.Store.reset_stats store;
+  Alcotest.(check int) "get_count after reset" 0 (Bole.Store.get_count store);
+  Alcotest.(check int) "put_count after reset" 0 (Bole.Store.put_count store)
+
 let tests =
   [ "store", [
       Alcotest.test_case "put/get round-trip" `Quick test_put_get_round_trip;
@@ -59,5 +73,6 @@ let tests =
       Alcotest.test_case "get unknown raises" `Quick test_get_unknown_raises;
       QCheck_alcotest.to_alcotest prop_round_trip;
       QCheck_alcotest.to_alcotest prop_content_addressing;
+      Alcotest.test_case "stats" `Quick test_stats;
     ]
   ]

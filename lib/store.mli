@@ -16,3 +16,14 @@ val get : t -> Hash.t -> string
 
 (** [mem store h] returns [true] if [h] is in the store. *)
 val mem : t -> Hash.t -> bool
+
+(** [get_count store] returns the number of [get] calls since creation
+    or the last [reset_stats]. *)
+val get_count : t -> int
+
+(** [put_count store] returns the number of [put] calls since creation
+    or the last [reset_stats]. *)
+val put_count : t -> int
+
+(** [reset_stats store] resets [get_count] and [put_count] to zero. *)
+val reset_stats : t -> unit
