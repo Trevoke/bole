@@ -232,3 +232,61 @@ let range ?start_key ?end_key store root =
         end
   in
   seq
+
+type mut_frame = {
+  internal_entries : Chunk.internal_entry list;
+  child_index : int;
+}
+
+let put store root key value =
+  let rec descend h path =
+    let data = Store.get store h in
+    let chunk = Chunk.decode data in
+    match chunk with
+    | Chunk.Leaf entries -> (entries, path)
+    | Chunk.Internal entries ->
+      let rec find_idx i = function
+        | [] -> i - 1
+        | (e : Chunk.internal_entry) :: _ when e.key >= key -> i
+        | _ :: rest -> find_idx (i + 1) rest
+      in
+      let idx = max 0 (find_idx 0 entries) in
+      let child = (List.nth entries idx).Chunk.child in
+      let frame = { internal_entries = entries; child_index = idx } in
+      descend child (frame :: path)
+  in
+
+  let leaf_entries, path = descend root [] in
+
+  (* Insert or replace in sorted position *)
+  let rec insert_sorted acc = function
+    | [] -> List.rev (({ Chunk.key; value } : Chunk.leaf_entry) :: acc)
+    | (e : Chunk.leaf_entry) :: rest when e.key = key ->
+      List.rev_append (({ Chunk.key; value } : Chunk.leaf_entry) :: acc) rest
+    | (e : Chunk.leaf_entry) :: rest when e.key > key ->
+      List.rev_append (({ Chunk.key; value } : Chunk.leaf_entry) :: e :: acc) rest
+    | e :: rest -> insert_sorted (e :: acc) rest
+  in
+  let new_entries = insert_sorted [] leaf_entries in
+
+  let target_size = default_target_size in
+  let parent_entries = chunk_leaf_entries ~target_size store new_entries in
+
+  let rec propagate path entries level =
+    match path with
+    | [] -> build_upper_levels ~target_size store entries
+    | frame :: rest ->
+      let old = frame.internal_entries in
+      let before = List.filteri (fun i _ -> i < frame.child_index) old in
+      let after = List.filteri (fun i _ -> i > frame.child_index) old in
+      let new_internal =
+        before
+        @ List.map (fun (k, h) ->
+            ({ Chunk.key = k; child = h } : Chunk.internal_entry)) entries
+        @ after
+      in
+      let new_pairs = chunk_internal_entries ~target_size ~level store
+        new_internal in
+      propagate rest new_pairs (level + 1)
+  in
+  propagate path parent_entries 1

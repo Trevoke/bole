@@ -303,6 +303,63 @@ let prop_range_bounds_filter =
          result = expected
        end)
 
+let test_put_empty_tree () =
+  let store = Bole.Store.create () in
+  let root = Bole.Tree.build store Seq.empty in
+  let root' = Bole.Tree.put store root "hello" "world" in
+  Alcotest.(check (option string)) "find after put"
+    (Some "world") (Bole.Tree.find store root' "hello")
+
+let test_put_new_key () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 10 (fun i ->
+    (Printf.sprintf "key-%03d" i, Printf.sprintf "val-%03d" i)) in
+  let root = Bole.Tree.build ~target_size:200 store (List.to_seq pairs) in
+  let root' = Bole.Tree.put store root "key-005a" "new-val" in
+  Alcotest.(check (option string)) "find new key"
+    (Some "new-val") (Bole.Tree.find store root' "key-005a");
+  Alcotest.(check (option string)) "old key intact"
+    (Some "val-005") (Bole.Tree.find store root' "key-005");
+  Alcotest.(check (option string)) "old tree unchanged"
+    None (Bole.Tree.find store root "key-005a")
+
+let test_put_update_existing () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 10 (fun i ->
+    (Printf.sprintf "key-%03d" i, Printf.sprintf "val-%03d" i)) in
+  let root = Bole.Tree.build ~target_size:200 store (List.to_seq pairs) in
+  let root' = Bole.Tree.put store root "key-005" "updated" in
+  Alcotest.(check (option string)) "value updated"
+    (Some "updated") (Bole.Tree.find store root' "key-005");
+  Alcotest.(check (option string)) "old tree unchanged"
+    (Some "val-005") (Bole.Tree.find store root "key-005")
+
+let test_put_same_value_noop () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 10 (fun i ->
+    (Printf.sprintf "key-%03d" i, Printf.sprintf "val-%03d" i)) in
+  let root = Bole.Tree.build ~target_size:200 store (List.to_seq pairs) in
+  let root' = Bole.Tree.put store root "key-005" "val-005" in
+  Alcotest.(check bool) "same root hash"
+    true (Bole.Hash.equal root root')
+
+let test_put_multi_chunk () =
+  let store = Bole.Store.create () in
+  let pairs = List.init 200 (fun i ->
+    (Printf.sprintf "key-%05d" i, Printf.sprintf "val-%05d" i)) in
+  let root = Bole.Tree.build ~target_size:20 store (List.to_seq pairs) in
+  let root' = Bole.Tree.put store root "key-00000a" "inserted-begin" in
+  Alcotest.(check (option string)) "inserted at begin"
+    (Some "inserted-begin") (Bole.Tree.find store root' "key-00000a");
+  let root'' = Bole.Tree.put store root' "key-00100a" "inserted-mid" in
+  Alcotest.(check (option string)) "inserted at mid"
+    (Some "inserted-mid") (Bole.Tree.find store root'' "key-00100a");
+  let root''' = Bole.Tree.put store root'' "key-00050" "updated" in
+  Alcotest.(check (option string)) "updated value"
+    (Some "updated") (Bole.Tree.find store root''' "key-00050");
+  Alcotest.(check (option string)) "original intact"
+    (Some "val-00199") (Bole.Tree.find store root''' "key-00199")
+
 let tests =
   [ "tree", [
       Alcotest.test_case "empty tree" `Quick test_empty_tree;
@@ -327,5 +384,10 @@ let tests =
       Alcotest.test_case "range empty result" `Quick test_range_empty_result;
       QCheck_alcotest.to_alcotest prop_range_full_scan;
       QCheck_alcotest.to_alcotest prop_range_bounds_filter;
+      Alcotest.test_case "put into empty tree" `Quick test_put_empty_tree;
+      Alcotest.test_case "put new key" `Quick test_put_new_key;
+      Alcotest.test_case "put update existing" `Quick test_put_update_existing;
+      Alcotest.test_case "put same value noop" `Quick test_put_same_value_noop;
+      Alcotest.test_case "put in multi-chunk tree" `Quick test_put_multi_chunk;
     ]
   ]

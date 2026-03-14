@@ -35,3 +35,8 @@ val range :
   Store.t ->
   Hash.t ->
   (string * string) Seq.t
+
+(** [put store root key value] returns a new root hash with [key]
+    mapped to [value]. If [key] already exists, its value is replaced.
+    The old tree remains accessible via its original root hash. *)
+val put : Store.t -> Hash.t -> string -> string -> Hash.t
