@@ -6,3 +6,4 @@ module Chunk = Chunk
 module Chunker = Chunker
 module Tree = Tree
 module Diff = Diff
+module Db_state = Db_state
