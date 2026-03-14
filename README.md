@@ -10,7 +10,7 @@ For anyone building applications that need to track data history, synchronize da
 
 ```bash
 # Build from source (requires OCaml 5.2+ and opam)
-git clone https://github.com/your-org/bole && cd bole
+git clone https://github.com/Trevoke/bole && cd bole
 opam install . --deps-only
 dune build
 
@@ -105,7 +105,7 @@ The architecture follows the [Noms](https://github.com/attic-labs/noms)/[Dolt](h
 Bole requires OCaml 5.2+ and uses opam for dependency management.
 
 ```bash
-git clone https://github.com/your-org/bole
+git clone https://github.com/Trevoke/bole
 cd bole
 opam install . --deps-only
 dune build
