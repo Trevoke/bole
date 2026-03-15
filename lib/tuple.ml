@@ -1,11 +1,13 @@
 type value =
   | Int64 of int64
   | String of string
+  | Uuid of Uuid.t
 
 type t = value list
 
 let tag_int64 = '\x01'
 let tag_string = '\x02'
+let tag_uuid = '\x03'
 
 let encode values =
   let buf = Buffer.create 64 in
@@ -22,6 +24,9 @@ let encode values =
       Buffer.add_char buf tag_string;
       Buffer.add_string buf s;
       Buffer.add_char buf '\x00'
+    | Uuid u ->
+      Buffer.add_char buf tag_uuid;
+      Buffer.add_string buf (Uuid.to_raw_string u)
   ) values;
   Buffer.contents buf
 
@@ -50,6 +55,10 @@ let decode data =
       let s = String.sub data start (!pos - start) in
       pos := !pos + 1;
       values := String s :: !values
+    | c when c = tag_uuid ->
+      let raw = String.sub data !pos 16 in
+      pos := !pos + 16;
+      values := Uuid (Uuid.of_raw_string raw) :: !values
     | _ -> invalid_arg (Printf.sprintf "Tuple.decode: unknown tag 0x%02x" (Char.code tag))
   done;
   List.rev !values

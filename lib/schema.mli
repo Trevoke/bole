@@ -3,18 +3,18 @@
     Binary format:
     [column_count: 2B BE] then per column: [name_len: 2B BE] [name] [type: 1B]
     [pk_count: 2B BE] then per pk column: [name_len: 2B BE] [name]
-    Type bytes: 0x01 = Int64, 0x02 = Str *)
+    Type bytes: 0x01 = Int64, 0x02 = Str, 0x03 = Uuid *)
 
-type column_type = Int64 | Str
+type column_type = Int64 | Str | Uuid
 
 type t = {
   columns : (string * column_type) list;
   primary_key : string list;
 }
 
-val create : columns:(string * column_type) list -> primary_key:string list -> t
-(** [create ~columns ~primary_key] creates a schema.
-    @raise Invalid_argument if any primary key column is not in the column list. *)
+val create : columns:(string * column_type) list -> t
+(** [create ~columns] creates a schema.
+    Automatically prepends ("_id", Uuid) and sets primary_key=["_id"]. *)
 
 val encode : t -> string
 val decode : string -> t

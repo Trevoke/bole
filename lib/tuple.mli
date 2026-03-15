@@ -6,11 +6,13 @@
 
     Encoding format: each value is type-tagged.
     - Int64 (tag 0x01): 8 bytes big-endian with sign-bit flip
-    - String (tag 0x02): bytes + 0x00 terminator *)
+    - String (tag 0x02): bytes + 0x00 terminator
+    - Uuid (tag 0x03): 16 raw bytes (UUIDv7 sorts chronologically) *)
 
 type value =
   | Int64 of int64
   | String of string
+  | Uuid of Uuid.t
 
 type t = value list
 

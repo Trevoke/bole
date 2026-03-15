@@ -1,15 +1,13 @@
-type column_type = Int64 | Str
+type column_type = Int64 | Str | Uuid
 
 type t = {
   columns : (string * column_type) list;
   primary_key : string list;
 }
 
-let create ~columns ~primary_key =
-  List.iter (fun pk ->
-    if not (List.mem_assoc pk columns) then
-      invalid_arg (Printf.sprintf "Schema.create: primary key column %S not in columns" pk)
-  ) primary_key;
+let create ~columns =
+  let columns = ("_id", Uuid) :: columns in
+  let primary_key = ["_id"] in
   { columns; primary_key }
 
 let key_columns schema =
@@ -21,10 +19,12 @@ let value_columns schema =
 let type_to_byte = function
   | Int64 -> '\x01'
   | Str -> '\x02'
+  | Uuid -> '\x03'
 
 let byte_to_type = function
   | '\x01' -> Int64
   | '\x02' -> Str
+  | '\x03' -> Uuid
   | c -> invalid_arg (Printf.sprintf "Schema.decode: unknown type byte 0x%02x" (Char.code c))
 
 let encode schema =

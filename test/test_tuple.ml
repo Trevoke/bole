@@ -14,12 +14,22 @@ let test_string_round_trip () =
   | [Bole.Tuple.String "hello"] -> ()
   | _ -> Alcotest.fail "expected String hello"
 
-let test_multi_field_round_trip () =
-  let values = [Bole.Tuple.String "alice"; Bole.Tuple.Int64 30L; Bole.Tuple.String "admin"] in
+let test_uuid_round_trip () =
+  let u = Bole.Uuid.v7 () in
+  let values = [Bole.Tuple.Uuid u] in
   let decoded = Bole.Tuple.decode (Bole.Tuple.encode values) in
-  Alcotest.(check int) "three fields" 3 (List.length decoded);
   match decoded with
-  | [Bole.Tuple.String "alice"; Bole.Tuple.Int64 30L; Bole.Tuple.String "admin"] -> ()
+  | [Bole.Tuple.Uuid u2] -> Alcotest.(check bool) "round-trip" true (Bole.Uuid.equal u u2)
+  | _ -> Alcotest.fail "expected Uuid"
+
+let test_multi_field_round_trip () =
+  let u = Bole.Uuid.v7 () in
+  let values = [Bole.Tuple.Uuid u; Bole.Tuple.String "alice"; Bole.Tuple.Int64 30L; Bole.Tuple.String "admin"] in
+  let decoded = Bole.Tuple.decode (Bole.Tuple.encode values) in
+  Alcotest.(check int) "four fields" 4 (List.length decoded);
+  match decoded with
+  | [Bole.Tuple.Uuid u2; Bole.Tuple.String "alice"; Bole.Tuple.Int64 30L; Bole.Tuple.String "admin"] ->
+    Alcotest.(check bool) "uuid matches" true (Bole.Uuid.equal u u2)
   | _ -> Alcotest.fail "unexpected decoded values"
 
 let test_empty_round_trip () =
@@ -51,6 +61,14 @@ let test_string_ordering () =
   Alcotest.(check bool) "ab < abc" true (String.compare b c < 0);
   Alcotest.(check bool) "abc < b" true (String.compare c d < 0)
 
+let test_uuid_ordering () =
+  let u1 = Bole.Uuid.v7 () in
+  Unix.sleepf 0.002;
+  let u2 = Bole.Uuid.v7 () in
+  let a = Bole.Tuple.encode [Bole.Tuple.Uuid u1] in
+  let b = Bole.Tuple.encode [Bole.Tuple.Uuid u2] in
+  Alcotest.(check bool) "uuid1 < uuid2" true (String.compare a b < 0)
+
 let test_composite_ordering () =
   let encode_pair s n = Bole.Tuple.encode [Bole.Tuple.String s; Bole.Tuple.Int64 n] in
   let a = encode_pair "alice" 10L in
@@ -63,10 +81,12 @@ let tests =
   [ "tuple", [
       Alcotest.test_case "int64 round-trip" `Quick test_int64_round_trip;
       Alcotest.test_case "string round-trip" `Quick test_string_round_trip;
+      Alcotest.test_case "uuid round-trip" `Quick test_uuid_round_trip;
       Alcotest.test_case "multi-field round-trip" `Quick test_multi_field_round_trip;
       Alcotest.test_case "empty round-trip" `Quick test_empty_round_trip;
       Alcotest.test_case "int64 ordering" `Quick test_int64_ordering;
       Alcotest.test_case "string ordering" `Quick test_string_ordering;
+      Alcotest.test_case "uuid ordering" `Quick test_uuid_ordering;
       Alcotest.test_case "composite ordering" `Quick test_composite_ordering;
     ]
   ]
