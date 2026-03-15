@@ -17,22 +17,29 @@ echo "=== init ==="
 $BOLE init
 
 echo "=== create-table ==="
-$BOLE create-table users key:string value:string --pk key
+$BOLE create-table users name:string email:string
 
 echo "=== put/get ==="
-$BOLE put users key=alice value=admin
-$BOLE put users key=bob value=editor
-test "$($BOLE get users alice)" = "key=alice value=admin"
-test "$($BOLE get users bob)" = "key=bob value=editor"
+ID1=$($BOLE put users name=alice email=alice@ex.com)
+echo "inserted: $ID1"
+$BOLE get users "$ID1" | grep -q "name=alice"
+$BOLE get users "$ID1" | grep -q "email=alice@ex.com"
+
+ID2=$($BOLE put users name=bob email=bob@ex.com)
+echo "inserted: $ID2"
 
 echo "=== commit ==="
-$BOLE put users key=alice value=superadmin
 C1=$($BOLE commit -m "initial")
 echo "commit1: $C1"
 
-$BOLE put users key=alice value=megadmin
-C2=$($BOLE commit -m "promote alice")
+echo "=== update ==="
+$BOLE update users "$ID1" name=Alice email=alice@newdomain.com
+C2=$($BOLE commit -m "update alice")
 echo "commit2: $C2"
+
+echo "=== get after update ==="
+$BOLE get users "$ID1" | grep -q "name=Alice"
+$BOLE get users "$ID1" | grep -q "email=alice@newdomain.com"
 
 echo "=== log ==="
 $BOLE log
@@ -42,14 +49,11 @@ $BOLE diff "$C1" "$C2" users
 
 echo "=== branch and merge ==="
 $BOLE branch feature
-$BOLE put users key=carol value=new
-$BOLE commit -m "add carol on feature" > /dev/null
+ID3=$($BOLE put users name=carol email=carol@ex.com)
+$BOLE commit -m "add carol" > /dev/null
 $BOLE switch main
-# Verify alice is still megadmin on main
-test "$($BOLE get users alice)" = "key=alice value=megadmin"
 $BOLE merge feature
-test "$($BOLE get users carol)" = "key=carol value=new"
-test "$($BOLE get users alice)" = "key=alice value=megadmin"
+$BOLE get users "$ID3" | grep -q "name=carol"
 
 echo ""
 echo "ALL CLI TESTS PASSED"

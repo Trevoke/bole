@@ -11,7 +11,32 @@ let render_tuple t =
   String.concat " " (List.map (function
     | Bole.Tuple.String s -> s
     | Bole.Tuple.Int64 n -> Int64.to_string n
+    | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u
   ) t)
+
+let render_row row =
+  String.concat " " (List.map (fun (col, v) ->
+    Printf.sprintf "%s=%s" col (match v with
+      | Bole.Tuple.String s -> s
+      | Bole.Tuple.Int64 n -> Int64.to_string n
+      | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u)
+  ) row)
+
+let parse_assignments assignments =
+  List.map (fun s ->
+    match String.index_opt s '=' with
+    | Some i ->
+      let col = String.sub s 0 i in
+      let value = String.sub s (i + 1) (String.length s - i - 1) in
+      let v = match Int64.of_string_opt value with
+        | Some n -> Bole.Tuple.Int64 n
+        | None -> Bole.Tuple.String value
+      in
+      (col, v)
+    | None ->
+      Printf.eprintf "invalid assignment: %s (expected col=value)\n" s;
+      exit 1
+  ) assignments
 
 (* --- init --- *)
 
@@ -32,7 +57,7 @@ let init_cmd =
 (* --- create-table --- *)
 
 let create_table_cmd =
-  let run table columns pk =
+  let run table columns =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
     let parse_col s =
@@ -44,17 +69,16 @@ let create_table_cmd =
         exit 1
     in
     let cols = List.map parse_col columns in
-    let schema = Bole.Schema.create ~columns:cols ~primary_key:pk in
+    let schema = Bole.Schema.create ~columns:cols in
     let db = Bole.Db.create_table db ~table ~schema in
     Bole.Repo.save path db;
     Printf.printf "Created table '%s'\n" table
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
   let columns = Arg.(non_empty & pos_right 0 string [] & info [] ~docv:"COL:TYPE") in
-  let pk = Arg.(non_empty & opt_all string [] & info ["pk"; "primary-key"] ~docv:"COL" ~doc:"Primary key column(s)") in
   let doc = "Create a table with a schema" in
   let info = Cmd.info "create-table" ~doc in
-  Cmd.v info Term.(const run $ table $ columns $ pk)
+  Cmd.v info Term.(const run $ table $ columns)
 
 (* --- put --- *)
 
@@ -62,81 +86,71 @@ let put_cmd =
   let run table assignments =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    let raw_pairs = List.map (fun s ->
-      match String.index_opt s '=' with
-      | Some i ->
-        let col = String.sub s 0 i in
-        let value = String.sub s (i + 1) (String.length s - i - 1) in
-        (col, value)
-      | None ->
-        Printf.eprintf "invalid assignment: %s (expected col=value)\n" s;
-        exit 1
-    ) assignments in
-    let row = List.map (fun (col, value) ->
-      let v = match Int64.of_string_opt value with
-        | Some n -> Bole.Tuple.Int64 n
-        | None -> Bole.Tuple.String value
-      in
-      (col, v)
-    ) raw_pairs in
-    let db = Bole.Db.put_row db ~table ~row in
-    Bole.Repo.save path db
+    let row = parse_assignments assignments in
+    let uuid, db = Bole.Db.put_row db ~table ~row in
+    Bole.Repo.save path db;
+    Printf.printf "%s\n" (Bole.Uuid.to_hex uuid)
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
   let assignments = Arg.(non_empty & pos_right 0 string [] & info [] ~docv:"COL=VALUE") in
-  let doc = "Insert or update a row in a table" in
+  let doc = "Insert a row in a table" in
   let info = Cmd.info "put" ~doc in
   Cmd.v info Term.(const run $ table $ assignments)
 
 (* --- get --- *)
 
 let get_cmd =
-  let run table key_vals =
+  let run table id_str =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    let key = List.map (fun s ->
-      match Int64.of_string_opt s with
-      | Some n -> Bole.Tuple.Int64 n
-      | None -> Bole.Tuple.String s
-    ) key_vals in
-    match Bole.Db.get_row db ~table ~key with
+    let id = Bole.Uuid.of_string id_str in
+    match Bole.Db.get_row db ~table ~id with
     | Some row ->
-      let parts = List.map (fun (col, v) ->
-        Printf.sprintf "%s=%s" col (match v with
-          | Bole.Tuple.String s -> s
-          | Bole.Tuple.Int64 n -> Int64.to_string n)
-      ) row in
-      print_string (String.concat " " parts);
+      print_string (render_row row);
       print_newline ()
     | None ->
       Printf.eprintf "not found\n";
       exit 1
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
-  let key_vals = Arg.(non_empty & pos_right 0 string [] & info [] ~docv:"KEY_VALUE") in
-  let doc = "Look up a row by primary key" in
+  let id_str = Arg.(required & pos 1 (some string) None & info [] ~docv:"UUID") in
+  let doc = "Look up a row by UUID" in
   let info = Cmd.info "get" ~doc in
-  Cmd.v info Term.(const run $ table $ key_vals)
+  Cmd.v info Term.(const run $ table $ id_str)
+
+(* --- update --- *)
+
+let update_cmd =
+  let run table id_str assignments =
+    let path = find_root_or_die () in
+    let db = Bole.Repo.load path in
+    let id = Bole.Uuid.of_string id_str in
+    let row = parse_assignments assignments in
+    let db = Bole.Db.update_row db ~table ~id ~row in
+    Bole.Repo.save path db
+  in
+  let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
+  let id_str = Arg.(required & pos 1 (some string) None & info [] ~docv:"UUID") in
+  let assignments = Arg.(non_empty & pos_right 1 string [] & info [] ~docv:"COL=VALUE") in
+  let doc = "Update a row by UUID" in
+  let info = Cmd.info "update" ~doc in
+  Cmd.v info Term.(const run $ table $ id_str $ assignments)
 
 (* --- delete --- *)
 
 let delete_cmd =
-  let run table key_vals =
+  let run table id_str =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    let key = List.map (fun s ->
-      match Int64.of_string_opt s with
-      | Some n -> Bole.Tuple.Int64 n
-      | None -> Bole.Tuple.String s
-    ) key_vals in
-    let db = Bole.Db.delete_row db ~table ~key in
+    let id = Bole.Uuid.of_string id_str in
+    let db = Bole.Db.delete_row db ~table ~id in
     Bole.Repo.save path db
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
-  let key_vals = Arg.(non_empty & pos_right 0 string [] & info [] ~docv:"KEY_VALUE") in
-  let doc = "Delete a row by primary key" in
+  let id_str = Arg.(required & pos 1 (some string) None & info [] ~docv:"UUID") in
+  let doc = "Delete a row by UUID" in
   let info = Cmd.info "delete" ~doc in
-  Cmd.v info Term.(const run $ table $ key_vals)
+  Cmd.v info Term.(const run $ table $ id_str)
 
 (* --- commit --- *)
 
@@ -264,7 +278,7 @@ let () =
   let doc = "A diffable, mergeable database" in
   let info = Cmd.info "bole" ~version:"0.1.0" ~doc in
   let cmd = Cmd.group info [
-    init_cmd; create_table_cmd; put_cmd; get_cmd; delete_cmd;
+    init_cmd; create_table_cmd; put_cmd; update_cmd; get_cmd; delete_cmd;
     commit_cmd; log_cmd;
     branch_cmd; switch_cmd;
     diff_cmd; merge_cmd;
