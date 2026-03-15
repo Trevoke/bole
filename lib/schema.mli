@@ -5,7 +5,7 @@
     [pk_count: 2B BE] then per pk column: [name_len: 2B BE] [name]
     Type bytes: 0x01 = Int64, 0x02 = Str, 0x03 = Uuid *)
 
-type column_type = Int64 | Str | Uuid
+type column_type = Int64 | Str | Uuid | Bool | Float | Timestamp | Blob
 
 type t = {
   columns : (string * column_type) list;

@@ -12,6 +12,10 @@ let render_tuple t =
     | Bole.Tuple.String s -> s
     | Bole.Tuple.Int64 n -> Int64.to_string n
     | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u
+    | Bole.Tuple.Bool b -> string_of_bool b
+    | Bole.Tuple.Float f -> Float.to_string f
+    | Bole.Tuple.Timestamp ts -> Int64.to_string ts
+    | Bole.Tuple.Blob b -> Printf.sprintf "<blob:%d>" (String.length b)
   ) t)
 
 let render_row row =
@@ -19,7 +23,11 @@ let render_row row =
     Printf.sprintf "%s=%s" col (match v with
       | Bole.Tuple.String s -> s
       | Bole.Tuple.Int64 n -> Int64.to_string n
-      | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u)
+      | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u
+      | Bole.Tuple.Bool b -> string_of_bool b
+      | Bole.Tuple.Float f -> Float.to_string f
+      | Bole.Tuple.Timestamp ts -> Int64.to_string ts
+      | Bole.Tuple.Blob b -> Printf.sprintf "<blob:%d>" (String.length b))
   ) row)
 
 let parse_assignments assignments =

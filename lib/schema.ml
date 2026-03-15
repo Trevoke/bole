@@ -1,4 +1,4 @@
-type column_type = Int64 | Str | Uuid
+type column_type = Int64 | Str | Uuid | Bool | Float | Timestamp | Blob
 
 type t = {
   columns : (string * column_type) list;
@@ -20,11 +20,19 @@ let type_to_byte = function
   | Int64 -> '\x01'
   | Str -> '\x02'
   | Uuid -> '\x03'
+  | Bool -> '\x04'
+  | Float -> '\x05'
+  | Timestamp -> '\x06'
+  | Blob -> '\x07'
 
 let byte_to_type = function
   | '\x01' -> Int64
   | '\x02' -> Str
   | '\x03' -> Uuid
+  | '\x04' -> Bool
+  | '\x05' -> Float
+  | '\x06' -> Timestamp
+  | '\x07' -> Blob
   | c -> invalid_arg (Printf.sprintf "Schema.decode: unknown type byte 0x%02x" (Char.code c))
 
 let encode schema =

@@ -9,6 +9,10 @@ let tuple_testable = Alcotest.testable
       | String s -> Printf.sprintf "String %S" s
       | Int64 n -> Printf.sprintf "Int64 %Ld" n
       | Uuid u -> Printf.sprintf "Uuid %s" (Bole.Uuid.to_hex u)
+      | Bool b -> Printf.sprintf "Bool %b" b
+      | Float f -> Printf.sprintf "Float %g" f
+      | Timestamp ts -> Printf.sprintf "Timestamp %Ld" ts
+      | Blob b -> Printf.sprintf "Blob %S" b
     ) t)))
   (=)
 
@@ -18,7 +22,11 @@ let tuple_value = Alcotest.testable
   (fun fmt v -> match v with
     | String s -> Format.fprintf fmt "String %S" s
     | Int64 n -> Format.fprintf fmt "Int64 %Ld" n
-    | Uuid u -> Format.fprintf fmt "Uuid %s" (Bole.Uuid.to_hex u))
+    | Uuid u -> Format.fprintf fmt "Uuid %s" (Bole.Uuid.to_hex u)
+    | Bool b -> Format.fprintf fmt "Bool %b" b
+    | Float f -> Format.fprintf fmt "Float %g" f
+    | Timestamp ts -> Format.fprintf fmt "Timestamp %Ld" ts
+    | Blob b -> Format.fprintf fmt "Blob %S" b)
   (=)
 
 let simple_schema = Bole.Schema.create

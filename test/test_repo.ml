@@ -19,7 +19,11 @@ let tuple_value = Alcotest.testable
   (fun fmt v -> match v with
     | Bole.Tuple.String s -> Format.fprintf fmt "String %S" s
     | Bole.Tuple.Int64 n -> Format.fprintf fmt "Int64 %Ld" n
-    | Bole.Tuple.Uuid u -> Format.fprintf fmt "Uuid %s" (Bole.Uuid.to_hex u))
+    | Bole.Tuple.Uuid u -> Format.fprintf fmt "Uuid %s" (Bole.Uuid.to_hex u)
+    | Bole.Tuple.Bool b -> Format.fprintf fmt "Bool %b" b
+    | Bole.Tuple.Float f -> Format.fprintf fmt "Float %g" f
+    | Bole.Tuple.Timestamp ts -> Format.fprintf fmt "Timestamp %Ld" ts
+    | Bole.Tuple.Blob b -> Format.fprintf fmt "Blob %S" b)
   (=)
 
 let test_init_creates_structure () =
