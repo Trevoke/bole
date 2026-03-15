@@ -12,6 +12,7 @@ let () =
        ; Test_db_state.tests
        ; Test_commit.tests
        ; Test_merge.tests
+       ; Test_uuid.tests
        ; Test_tuple.tests
        ; Test_schema.tests
        ; Test_repo.tests

@@ -9,6 +9,7 @@ module Diff = Diff
 module Db_state = Db_state
 module Commit = Commit
 module Merge = Merge
+module Uuid = Uuid
 module Tuple = Tuple
 module Schema = Schema
 module Db = Db

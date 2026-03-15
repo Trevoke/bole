@@ -1,4 +1,4 @@
 (library
  (name bole)
  (public_name bole)
- (libraries digestif))
+ (libraries digestif unix))
