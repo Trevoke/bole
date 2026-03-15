@@ -7,12 +7,17 @@ type t = {
   tables : Hash.t StringMap.t;
 } [@@warning "-69"]
 
+type diff_entry =
+  | Added of Tuple.t * Tuple.t
+  | Removed of Tuple.t * Tuple.t
+  | Modified of Tuple.t * Tuple.t * Tuple.t
+
 type conflict = {
   table : string;
-  key : string;
-  base : string option;
-  ours : string option;
-  theirs : string option;
+  key : Tuple.t;
+  base : Tuple.t option;
+  ours : Tuple.t option;
+  theirs : Tuple.t option;
 }
 
 type merge_result = {
@@ -63,30 +68,39 @@ let of_parts ~store ~branches ~current_branch ~head_commit ?(working_tables=[]) 
   { store; branches = branch_tbl; current_branch; tables }
 
 let put db ~table ~key ~value =
+  let key_bytes = Tuple.encode key in
+  let value_bytes = Tuple.encode value in
   let root = match StringMap.find_opt table db.tables with
     | Some r -> r
     | None -> empty_tree_root db.store
   in
-  let root' = Tree.put db.store root key value in
+  let root' = Tree.put db.store root key_bytes value_bytes in
   { db with tables = StringMap.add table root' db.tables }
 
 let delete db ~table ~key =
+  let key_bytes = Tuple.encode key in
   let root = match StringMap.find_opt table db.tables with
     | Some r -> r
     | None -> raise Not_found
   in
-  let root' = Tree.delete db.store root key in
+  let root' = Tree.delete db.store root key_bytes in
   { db with tables = StringMap.add table root' db.tables }
 
 let find db ~table ~key =
+  let key_bytes = Tuple.encode key in
   match StringMap.find_opt table db.tables with
   | None -> None
-  | Some root -> Tree.find db.store root key
+  | Some root ->
+    match Tree.find db.store root key_bytes with
+    | None -> None
+    | Some v -> Some (Tuple.decode v)
 
 let range db ~table =
   match StringMap.find_opt table db.tables with
   | None -> Seq.empty
-  | Some root -> Tree.range db.store root
+  | Some root ->
+    Tree.range db.store root
+    |> Seq.map (fun (k, v) -> (Tuple.decode k, Tuple.decode v))
 
 let commit db ~message =
   let entries = StringMap.fold (fun name root acc ->
@@ -140,6 +154,12 @@ let diff db ~from ~to_ ~table =
   let from_root = table_root_from_commit db from table in
   let to_root = table_root_from_commit db to_ table in
   Diff.diff db.store ~from:from_root ~to_:to_root
+  |> Seq.map (fun entry ->
+    match entry with
+    | Diff.Added (k, v) -> Added (Tuple.decode k, Tuple.decode v)
+    | Diff.Removed (k, v) -> Removed (Tuple.decode k, Tuple.decode v)
+    | Diff.Modified (k, o, n) ->
+      Modified (Tuple.decode k, Tuple.decode o, Tuple.decode n))
 let load_tables db commit_hash =
   let commit_data = Store.get db.store commit_hash in
   let commit_obj = Commit.decode commit_data in
@@ -233,10 +253,10 @@ let merge db ~ours ~theirs =
       List.iter (fun (c : Merge.conflict) ->
         all_conflicts := {
           table = name;
-          key = c.key;
-          base = c.base;
-          ours = c.ours;
-          theirs = c.theirs;
+          key = Tuple.decode c.key;
+          base = Option.map Tuple.decode c.base;
+          ours = Option.map Tuple.decode c.ours;
+          theirs = Option.map Tuple.decode c.theirs;
         } :: !all_conflicts
       ) result.Merge.conflicts
     end
