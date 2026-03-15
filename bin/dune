@@ -1,4 +1,4 @@
 (executable
  (name main)
  (public_name bole)
- (libraries bole cmdliner))
+ (libraries bole cmdliner unix))

@@ -7,28 +7,45 @@ let find_root_or_die () =
     Printf.eprintf "fatal: not a bole repository (no .bole/ found)\n";
     exit 1
 
+let render_value = function
+  | Bole.Tuple.String s -> s
+  | Bole.Tuple.Int64 n -> Int64.to_string n
+  | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u
+  | Bole.Tuple.Bool b -> string_of_bool b
+  | Bole.Tuple.Float f -> Float.to_string f
+  | Bole.Tuple.Timestamp ts ->
+    let secs = Int64.to_float ts /. 1_000_000.0 in
+    let tm = Unix.gmtime secs in
+    Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02dZ"
+      (tm.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday
+      tm.tm_hour tm.tm_min tm.tm_sec
+  | Bole.Tuple.Blob b ->
+    let buf = Buffer.create (String.length b * 2) in
+    String.iter (fun c ->
+      Buffer.add_string buf (Printf.sprintf "%02x" (Char.code c))
+    ) b;
+    Buffer.contents buf
+
 let render_tuple t =
-  String.concat " " (List.map (function
-    | Bole.Tuple.String s -> s
-    | Bole.Tuple.Int64 n -> Int64.to_string n
-    | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u
-    | Bole.Tuple.Bool b -> string_of_bool b
-    | Bole.Tuple.Float f -> Float.to_string f
-    | Bole.Tuple.Timestamp ts -> Int64.to_string ts
-    | Bole.Tuple.Blob b -> Printf.sprintf "<blob:%d>" (String.length b)
-  ) t)
+  String.concat " " (List.map render_value t)
 
 let render_row row =
   String.concat " " (List.map (fun (col, v) ->
-    Printf.sprintf "%s=%s" col (match v with
-      | Bole.Tuple.String s -> s
-      | Bole.Tuple.Int64 n -> Int64.to_string n
-      | Bole.Tuple.Uuid u -> Bole.Uuid.to_hex u
-      | Bole.Tuple.Bool b -> string_of_bool b
-      | Bole.Tuple.Float f -> Float.to_string f
-      | Bole.Tuple.Timestamp ts -> Int64.to_string ts
-      | Bole.Tuple.Blob b -> Printf.sprintf "<blob:%d>" (String.length b))
+    Printf.sprintf "%s=%s" col (render_value v)
   ) row)
+
+let parse_value s =
+  if s = "true" then Bole.Tuple.Bool true
+  else if s = "false" then Bole.Tuple.Bool false
+  else match Int64.of_string_opt s with
+  | Some n -> Bole.Tuple.Int64 n
+  | None ->
+    if String.contains s '.' then
+      match Float.of_string_opt s with
+      | Some f -> Bole.Tuple.Float f
+      | None -> Bole.Tuple.String s
+    else
+      Bole.Tuple.String s
 
 let parse_assignments assignments =
   List.map (fun s ->
@@ -36,11 +53,7 @@ let parse_assignments assignments =
     | Some i ->
       let col = String.sub s 0 i in
       let value = String.sub s (i + 1) (String.length s - i - 1) in
-      let v = match Int64.of_string_opt value with
-        | Some n -> Bole.Tuple.Int64 n
-        | None -> Bole.Tuple.String value
-      in
-      (col, v)
+      (col, parse_value value)
     | None ->
       Printf.eprintf "invalid assignment: %s (expected col=value)\n" s;
       exit 1
@@ -72,8 +85,12 @@ let create_table_cmd =
       match String.split_on_char ':' s with
       | [name; "int64"] -> (name, Bole.Schema.Int64)
       | [name; "string"] -> (name, Bole.Schema.Str)
+      | [name; "bool"] -> (name, Bole.Schema.Bool)
+      | [name; "float"] -> (name, Bole.Schema.Float)
+      | [name; "timestamp"] -> (name, Bole.Schema.Timestamp)
+      | [name; "blob"] -> (name, Bole.Schema.Blob)
       | _ ->
-        Printf.eprintf "invalid column spec: %s (expected name:type, type is int64 or string)\n" s;
+        Printf.eprintf "invalid column spec: %s (expected name:type, type is int64, string, bool, float, timestamp, or blob)\n" s;
         exit 1
     in
     let cols = List.map parse_col columns in
@@ -284,7 +301,7 @@ let merge_cmd =
 
 let () =
   let doc = "A diffable, mergeable database" in
-  let info = Cmd.info "bole" ~version:"0.1.0" ~doc in
+  let info = Cmd.info "bole" ~version:"0.2.0" ~doc in
   let cmd = Cmd.group info [
     init_cmd; create_table_cmd; put_cmd; update_cmd; get_cmd; delete_cmd;
     commit_cmd; log_cmd;
