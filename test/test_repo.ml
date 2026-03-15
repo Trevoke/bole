@@ -12,6 +12,16 @@ let with_tmp_dir f =
     rm dir
   ) (fun () -> f dir)
 
+let simple_schema = Bole.Schema.create
+  ~columns:["key", Bole.Schema.Str; "value", Bole.Schema.Str]
+  ~primary_key:["key"]
+
+let tuple_value = Alcotest.testable
+  (fun fmt v -> match v with
+    | Bole.Tuple.String s -> Format.fprintf fmt "String %S" s
+    | Bole.Tuple.Int64 n -> Format.fprintf fmt "Int64 %Ld" n)
+  (=)
+
 let test_init_creates_structure () =
   with_tmp_dir (fun dir ->
     Bole.Repo.init dir;
@@ -29,44 +39,36 @@ let test_round_trip () =
   with_tmp_dir (fun dir ->
     Bole.Repo.init dir;
     let db = Bole.Repo.load dir in
-    let db = Bole.Db.put db ~table:"users" ~key:[Bole.Tuple.String "alice"] ~value:[Bole.Tuple.String "admin"] in
+    let db = Bole.Db.create_table db ~table:"users" ~schema:simple_schema in
+    let db = Bole.Db.put_row db ~table:"users" ~row:["key", Bole.Tuple.String "alice"; "value", Bole.Tuple.String "admin"] in
     let _h, db = Bole.Db.commit db ~message:"first" in
     Bole.Repo.save dir db;
     let db2 = Bole.Repo.load dir in
-    let opt_tuple = Alcotest.option (Alcotest.testable
-      (fun fmt t -> Format.fprintf fmt "%s"
-        (String.concat ", " (List.map (function
-          | Bole.Tuple.String s -> s
-          | Bole.Tuple.Int64 n -> Int64.to_string n
-        ) t)))
-      (=))
-    in
-    Alcotest.(check opt_tuple) "persisted value"
-      (Some [Bole.Tuple.String "admin"]) (Bole.Db.find db2 ~table:"users" ~key:[Bole.Tuple.String "alice"]))
+    match Bole.Db.get_row db2 ~table:"users" ~key:[Bole.Tuple.String "alice"] with
+    | Some row ->
+      Alcotest.(check tuple_value) "persisted value"
+        (Bole.Tuple.String "admin") (List.assoc "value" row)
+    | None -> Alcotest.fail "alice not found after reload")
 
 let test_branch_persistence () =
   with_tmp_dir (fun dir ->
     Bole.Repo.init dir;
     let db = Bole.Repo.load dir in
-    let db = Bole.Db.put db ~table:"t" ~key:[Bole.Tuple.String "k"] ~value:[Bole.Tuple.String "v"] in
+    let db = Bole.Db.create_table db ~table:"t" ~schema:simple_schema in
+    let db = Bole.Db.put_row db ~table:"t" ~row:["key", Bole.Tuple.String "k"; "value", Bole.Tuple.String "v"] in
     let _, db = Bole.Db.commit db ~message:"init" in
     let db = Bole.Db.branch db ~name:"feature" in
-    let db = Bole.Db.put db ~table:"t" ~key:[Bole.Tuple.String "k2"] ~value:[Bole.Tuple.String "v2"] in
+    let db = Bole.Db.put_row db ~table:"t" ~row:["key", Bole.Tuple.String "k2"; "value", Bole.Tuple.String "v2"] in
     let _, db = Bole.Db.commit db ~message:"on feature" in
     Bole.Repo.save dir db;
     let db2 = Bole.Repo.load dir in
     Alcotest.(check string) "on feature branch" "feature"
       (Bole.Db.current_branch db2);
-    let opt_tuple = Alcotest.option (Alcotest.testable
-      (fun fmt t -> Format.fprintf fmt "%s"
-        (String.concat ", " (List.map (function
-          | Bole.Tuple.String s -> s
-          | Bole.Tuple.Int64 n -> Int64.to_string n
-        ) t)))
-      (=))
-    in
-    Alcotest.(check opt_tuple) "feature has k2"
-      (Some [Bole.Tuple.String "v2"]) (Bole.Db.find db2 ~table:"t" ~key:[Bole.Tuple.String "k2"]))
+    match Bole.Db.get_row db2 ~table:"t" ~key:[Bole.Tuple.String "k2"] with
+    | Some row ->
+      Alcotest.(check tuple_value) "feature has k2"
+        (Bole.Tuple.String "v2") (List.assoc "value" row)
+    | None -> Alcotest.fail "k2 not found after reload")
 
 let tests =
   [ "repo", [

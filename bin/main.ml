@@ -13,6 +13,15 @@ let render_tuple t =
     | Bole.Tuple.Int64 n -> Int64.to_string n
   ) t)
 
+let simple_schema = Bole.Schema.create
+  ~columns:["key", Bole.Schema.Str; "value", Bole.Schema.Str]
+  ~primary_key:["key"]
+
+let ensure_table db table =
+  (* Create table if it doesn't exist yet; ignore if already created *)
+  try Bole.Db.create_table db ~table ~schema:simple_schema
+  with _ -> db
+
 (* --- init --- *)
 
 let init_cmd =
@@ -35,9 +44,9 @@ let put_cmd =
   let run table key value =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    let db = Bole.Db.put db ~table
-      ~key:[Bole.Tuple.String key]
-      ~value:[Bole.Tuple.String value] in
+    let db = ensure_table db table in
+    let db = Bole.Db.put_row db ~table
+      ~row:["key", Bole.Tuple.String key; "value", Bole.Tuple.String value] in
     Bole.Repo.save path db
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
@@ -53,8 +62,14 @@ let get_cmd =
   let run table key =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    match Bole.Db.find db ~table ~key:[Bole.Tuple.String key] with
-    | Some value -> print_string (render_tuple value); print_newline ()
+    match Bole.Db.get_row db ~table ~key:[Bole.Tuple.String key] with
+    | Some row ->
+      (match List.assoc_opt "value" row with
+       | Some (Bole.Tuple.String v) -> print_string v; print_newline ()
+       | Some (Bole.Tuple.Int64 n) -> print_string (Int64.to_string n); print_newline ()
+       | None ->
+         Printf.eprintf "not found: %s/%s\n" table key;
+         exit 1)
     | None ->
       Printf.eprintf "not found: %s/%s\n" table key;
       exit 1
@@ -71,7 +86,7 @@ let delete_cmd =
   let run table key =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    let db = Bole.Db.delete db ~table ~key:[Bole.Tuple.String key] in
+    let db = Bole.Db.delete_row db ~table ~key:[Bole.Tuple.String key] in
     Bole.Repo.save path db
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in

@@ -49,17 +49,17 @@ let load path =
   let head_commit =
     List.assoc_opt current_branch branches
   in
-  let working_tables =
+  let working_state =
     let wf = working_file path in
     if Sys.file_exists wf then begin
       let data = read_file wf in
       if String.length data > 0 then
-        List.map (fun (e : Db_state.table_entry) -> (e.name, e.root))
+        List.map (fun (e : Db_state.table_entry) -> (e.name, e.root, e.schema))
           (Db_state.decode data)
       else []
     end else []
   in
-  Db.of_parts ~store ~branches ~current_branch ~head_commit ~working_tables ()
+  Db.of_parts ~store ~branches ~current_branch ~head_commit ~working_state ()
 
 let save path db =
   write_file (head_file path) (Db.current_branch db ^ "\n");
@@ -68,9 +68,9 @@ let save path db =
   List.iter (fun (name, hash) ->
     write_file (Filename.concat heads name) (Hash.to_hex hash ^ "\n")
   ) (Db.branch_heads db);
-  let entries = List.map (fun (name, root) ->
-    Db_state.{ name; root }
-  ) (Db.working_tables db) in
+  let entries = List.map (fun (name, root, schema) ->
+    Db_state.{ name; root; schema }
+  ) (Db.working_state db) in
   write_file (working_file path) (Db_state.encode entries)
 
 let find_root () =
