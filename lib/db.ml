@@ -1,10 +1,12 @@
 module StringMap = Map.Make(String)
 
+type table_state = { root : Hash.t; schema : Hash.t }
+
 type t = {
   store : Store.t;
   branches : (string, Hash.t) Hashtbl.t; [@warning "-69"]
   current_branch : string; [@warning "-69"]
-  tables : Hash.t StringMap.t;
+  tables : table_state StringMap.t;
 } [@@warning "-69"]
 
 type diff_entry =
@@ -42,69 +44,95 @@ let current_branch db = db.current_branch
 let branch_heads db =
   Hashtbl.fold (fun name hash acc -> (name, hash) :: acc) db.branches []
 
-let working_tables db =
-  StringMap.fold (fun name root acc -> (name, root) :: acc) db.tables []
+let working_state db =
+  StringMap.fold (fun name ts acc -> (name, ts.root, ts.schema) :: acc) db.tables []
 
-let of_parts ~store ~branches ~current_branch ~head_commit ?(working_tables=[]) () =
+let load_schema store schema_hash =
+  Schema.decode (Store.get store schema_hash)
+
+let split_row schema row =
+  let key_cols = Schema.key_columns schema in
+  let val_cols = Schema.value_columns schema in
+  let key = List.map (fun (name, _) -> List.assoc name row) key_cols in
+  let value = List.map (fun (name, _) -> List.assoc name row) val_cols in
+  (key, value)
+
+let merge_row schema key_tuple value_tuple =
+  let key_cols = Schema.key_columns schema in
+  let val_cols = Schema.value_columns schema in
+  let key_pairs = List.combine (List.map fst key_cols) key_tuple in
+  let val_pairs = List.combine (List.map fst val_cols) value_tuple in
+  key_pairs @ val_pairs
+
+let load_tables_from_commit store commit_hash =
+  let commit_data = Store.get store commit_hash in
+  let commit_obj = Commit.decode commit_data in
+  let state_data = Store.get store commit_obj.state in
+  let entries = Db_state.decode state_data in
+  List.fold_left (fun acc (e : Db_state.table_entry) ->
+    StringMap.add e.name { root = e.root; schema = e.schema } acc
+  ) StringMap.empty entries
+
+let of_parts ~store ~branches ~current_branch ~head_commit ?(working_state=[]) () =
   let branch_tbl = Hashtbl.create 16 in
   List.iter (fun (name, hash) -> Hashtbl.replace branch_tbl name hash) branches;
-  let tables = match working_tables with
+  let tables = match working_state with
     | _ :: _ ->
-      List.fold_left (fun acc (name, root) ->
-        StringMap.add name root acc
-      ) StringMap.empty working_tables
+      List.fold_left (fun acc (name, root, schema) ->
+        StringMap.add name { root; schema } acc
+      ) StringMap.empty working_state
     | [] ->
       match head_commit with
-      | Some h ->
-        let commit_data = Store.get store h in
-        let commit_obj = Commit.decode commit_data in
-        let state_data = Store.get store commit_obj.state in
-        let entries = Db_state.decode state_data in
-        List.fold_left (fun acc (e : Db_state.table_entry) ->
-          StringMap.add e.name e.root acc
-        ) StringMap.empty entries
+      | Some h -> load_tables_from_commit store h
       | None -> StringMap.empty
   in
   { store; branches = branch_tbl; current_branch; tables }
 
-let put db ~table ~key ~value =
-  let key_bytes = Tuple.encode key in
-  let value_bytes = Tuple.encode value in
-  let root = match StringMap.find_opt table db.tables with
-    | Some r -> r
-    | None -> empty_tree_root db.store
-  in
-  let root' = Tree.put db.store root key_bytes value_bytes in
-  { db with tables = StringMap.add table root' db.tables }
+let create_table db ~table ~schema =
+  let schema_data = Schema.encode schema in
+  let schema_hash = Store.put db.store schema_data in
+  let root = empty_tree_root db.store in
+  { db with tables = StringMap.add table { root; schema = schema_hash } db.tables }
 
-let delete db ~table ~key =
-  let key_bytes = Tuple.encode key in
-  let root = match StringMap.find_opt table db.tables with
-    | Some r -> r
-    | None -> raise Not_found
-  in
-  let root' = Tree.delete db.store root key_bytes in
-  { db with tables = StringMap.add table root' db.tables }
+let put_row db ~table ~row =
+  let ts = StringMap.find table db.tables in
+  let schema = load_schema db.store ts.schema in
+  let key_tuple, val_tuple = split_row schema row in
+  let key_bytes = Tuple.encode key_tuple in
+  let val_bytes = Tuple.encode val_tuple in
+  let root' = Tree.put db.store ts.root key_bytes val_bytes in
+  { db with tables = StringMap.add table { ts with root = root' } db.tables }
 
-let find db ~table ~key =
-  let key_bytes = Tuple.encode key in
+let get_row db ~table ~key =
   match StringMap.find_opt table db.tables with
   | None -> None
-  | Some root ->
-    match Tree.find db.store root key_bytes with
+  | Some ts ->
+    let key_bytes = Tuple.encode key in
+    match Tree.find db.store ts.root key_bytes with
     | None -> None
-    | Some v -> Some (Tuple.decode v)
+    | Some v ->
+      let schema = load_schema db.store ts.schema in
+      let val_tuple = Tuple.decode v in
+      Some (merge_row schema key val_tuple)
 
-let range db ~table =
+let delete_row db ~table ~key =
+  let ts = StringMap.find table db.tables in
+  let key_bytes = Tuple.encode key in
+  let root' = Tree.delete db.store ts.root key_bytes in
+  { db with tables = StringMap.add table { ts with root = root' } db.tables }
+
+let range_rows db ~table =
   match StringMap.find_opt table db.tables with
   | None -> Seq.empty
-  | Some root ->
-    Tree.range db.store root
-    |> Seq.map (fun (k, v) -> (Tuple.decode k, Tuple.decode v))
+  | Some ts ->
+    let schema = load_schema db.store ts.schema in
+    Tree.range db.store ts.root
+    |> Seq.map (fun (k, v) ->
+      merge_row schema (Tuple.decode k) (Tuple.decode v))
 
 let commit db ~message =
-  let entries = StringMap.fold (fun name root acc ->
-    Db_state.{ name; root } :: acc
+  let entries = StringMap.fold (fun name (ts : table_state) acc ->
+    Db_state.{ name; root = ts.root; schema = ts.schema } :: acc
   ) db.tables [] in
   let state_data = Db_state.encode entries in
   let state_hash = Store.put db.store state_data in
@@ -119,19 +147,14 @@ let commit db ~message =
   (commit_hash, db)
 
 let checkout db commit_hash =
-  let commit_data = Store.get db.store commit_hash in
-  let commit_obj = Commit.decode commit_data in
-  let state_data = Store.get db.store commit_obj.state in
-  let entries = Db_state.decode state_data in
-  let tables = List.fold_left (fun acc (e : Db_state.table_entry) ->
-    StringMap.add e.name e.root acc
-  ) StringMap.empty entries in
+  let tables = load_tables_from_commit db.store commit_hash in
   { db with tables }
 
 let parents db commit_hash =
   let commit_data = Store.get db.store commit_hash in
   let commit_obj = Commit.decode commit_data in
   commit_obj.parents
+
 let branch db ~name =
   let head = Hashtbl.find db.branches db.current_branch in
   Hashtbl.replace db.branches name head;
@@ -141,6 +164,7 @@ let switch db ~name =
   let commit_hash = Hashtbl.find db.branches name in
   let db = checkout db commit_hash in
   { db with current_branch = name }
+
 let table_root_from_commit db commit_hash table =
   let commit_data = Store.get db.store commit_hash in
   let commit_obj = Commit.decode commit_data in
@@ -160,14 +184,6 @@ let diff db ~from ~to_ ~table =
     | Diff.Removed (k, v) -> Removed (Tuple.decode k, Tuple.decode v)
     | Diff.Modified (k, o, n) ->
       Modified (Tuple.decode k, Tuple.decode o, Tuple.decode n))
-let load_tables db commit_hash =
-  let commit_data = Store.get db.store commit_hash in
-  let commit_obj = Commit.decode commit_data in
-  let state_data = Store.get db.store commit_obj.state in
-  let entries = Db_state.decode state_data in
-  List.fold_left (fun acc (e : Db_state.table_entry) ->
-    StringMap.add e.name e.root acc
-  ) StringMap.empty entries
 
 let find_ancestor db h1 h2 =
   if Hash.equal h1 h2 then h1
@@ -216,9 +232,9 @@ let merge db ~ours ~theirs =
   let ours_hash = Hashtbl.find db.branches ours in
   let theirs_hash = Hashtbl.find db.branches theirs in
   let ancestor_hash = find_ancestor db ours_hash theirs_hash in
-  let ancestor_tables = load_tables db ancestor_hash in
-  let ours_tables = load_tables db ours_hash in
-  let theirs_tables = load_tables db theirs_hash in
+  let ancestor_tables = load_tables_from_commit db.store ancestor_hash in
+  let ours_tables = load_tables_from_commit db.store ours_hash in
+  let theirs_tables = load_tables_from_commit db.store theirs_hash in
   let empty_root = empty_tree_root db.store in
   (* Collect union of all table names *)
   let all_names =
@@ -229,36 +245,89 @@ let merge db ~ours ~theirs =
   let all_conflicts = ref [] in
   StringMap.iter (fun name _ ->
     let a_root = match StringMap.find_opt name ancestor_tables with
-      | Some r -> r | None -> empty_root in
+      | Some ts -> ts.root | None -> empty_root in
     let o_root = match StringMap.find_opt name ours_tables with
-      | Some r -> r | None -> empty_root in
+      | Some ts -> ts.root | None -> empty_root in
     let t_root = match StringMap.find_opt name theirs_tables with
-      | Some r -> r | None -> empty_root in
+      | Some ts -> ts.root | None -> empty_root in
     if Hash.equal o_root t_root then
-      merged_tables := StringMap.add name o_root !merged_tables
+      merged_tables := StringMap.add name (StringMap.find name ours_tables) !merged_tables
     else if Hash.equal o_root a_root then
-      merged_tables := StringMap.add name t_root !merged_tables
+      merged_tables := StringMap.add name (StringMap.find name theirs_tables) !merged_tables
     else if Hash.equal t_root a_root then
-      merged_tables := StringMap.add name o_root !merged_tables
+      merged_tables := StringMap.add name (StringMap.find name ours_tables) !merged_tables
     else begin
       let ours_diff = Diff.diff db.store ~from:a_root ~to_:o_root in
       let theirs_diff = Diff.diff db.store ~from:a_root ~to_:t_root in
       let result = Merge.three_way ~ours:ours_diff ~theirs:theirs_diff in
+
+      (* Load schema for cell-level merge *)
+      let ts = StringMap.find name ours_tables in
+      let schema = load_schema db.store ts.schema in
+      let val_cols = Schema.value_columns schema in
+      let n_fields = List.length val_cols in
+
+      (* Apply non-conflicting changes first *)
       let final_root = List.fold_left (fun root change ->
         match change with
         | Merge.Put (k, v) -> Tree.put db.store root k v
         | Merge.Delete k -> Tree.delete db.store root k
       ) o_root result.Merge.changes in
-      merged_tables := StringMap.add name final_root !merged_tables;
+
+      (* Try cell-level resolution for each conflict *)
+      let final_root = ref final_root in
       List.iter (fun (c : Merge.conflict) ->
-        all_conflicts := {
-          table = name;
-          key = Tuple.decode c.key;
-          base = Option.map Tuple.decode c.base;
-          ours = Option.map Tuple.decode c.ours;
-          theirs = Option.map Tuple.decode c.theirs;
-        } :: !all_conflicts
-      ) result.Merge.conflicts
+        match c.base with
+        | None ->
+          (* Both added — can't do cell-level *)
+          all_conflicts := {
+            table = name;
+            key = Tuple.decode c.key;
+            base = Option.map Tuple.decode c.base;
+            ours = Option.map Tuple.decode c.ours;
+            theirs = Option.map Tuple.decode c.theirs;
+          } :: !all_conflicts
+        | Some base_bytes ->
+          let base_vals = Tuple.decode base_bytes in
+          let ours_vals = match c.ours with
+            | Some b -> Tuple.decode b | None -> base_vals in
+          let theirs_vals = match c.theirs with
+            | Some b -> Tuple.decode b | None -> base_vals in
+          if n_fields = 0 || List.length base_vals <> n_fields then
+            (* Schema mismatch or no value columns — fall back to whole-value conflict *)
+            all_conflicts := {
+              table = name;
+              key = Tuple.decode c.key;
+              base = Some base_vals;
+              ours = Some ours_vals;
+              theirs = Some theirs_vals;
+            } :: !all_conflicts
+          else begin
+            let has_conflict = ref false in
+            let merged = List.init n_fields (fun i ->
+              let b = List.nth base_vals i in
+              let o = List.nth ours_vals i in
+              let t = List.nth theirs_vals i in
+              if o = b then t
+              else if t = b then o
+              else if o = t then o
+              else begin has_conflict := true; o end
+            ) in
+            if !has_conflict then
+              all_conflicts := {
+                table = name;
+                key = Tuple.decode c.key;
+                base = Some base_vals;
+                ours = Some ours_vals;
+                theirs = Some theirs_vals;
+              } :: !all_conflicts
+            else begin
+              let merged_bytes = Tuple.encode merged in
+              final_root := Tree.put db.store !final_root c.key merged_bytes
+            end
+          end
+      ) result.Merge.conflicts;
+      merged_tables := StringMap.add name { root = !final_root; schema = ts.schema } !merged_tables
     end
   ) all_names;
   { db = { db with tables = !merged_tables };

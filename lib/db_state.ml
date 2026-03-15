@@ -1,4 +1,4 @@
-type table_entry = { name : string; root : Hash.t }
+type table_entry = { name : string; root : Hash.t; schema : Hash.t }
 
 type t = table_entry list
 
@@ -13,7 +13,8 @@ let encode entries =
   List.iter (fun e ->
     add_u16 (String.length e.name);
     Buffer.add_string buf e.name;
-    Buffer.add_string buf (Hash.to_raw_string e.root)
+    Buffer.add_string buf (Hash.to_raw_string e.root);
+    Buffer.add_string buf (Hash.to_raw_string e.schema)
   ) sorted;
   Buffer.contents buf
 
@@ -32,6 +33,8 @@ let decode data =
     pos := !pos + name_len;
     let root = Hash.of_raw_string (String.sub data !pos Hash.hash_size) in
     pos := !pos + Hash.hash_size;
-    { name; root }
+    let schema = Hash.of_raw_string (String.sub data !pos Hash.hash_size) in
+    pos := !pos + Hash.hash_size;
+    { name; root; schema }
   ) in
   entries

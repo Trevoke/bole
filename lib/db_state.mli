@@ -4,9 +4,9 @@
     sorted by name for deterministic hashing.
 
     Binary format: [entry_count: 2B BE] then per entry:
-    [name_len: 2B BE] [name] [root_hash: 32B] *)
+    [name_len: 2B BE] [name] [root_hash: 32B] [schema_hash: 32B] *)
 
-type table_entry = { name : string; root : Hash.t }
+type table_entry = { name : string; root : Hash.t; schema : Hash.t }
 
 type t = table_entry list
 
