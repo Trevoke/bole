@@ -50,13 +50,6 @@ let working_state db =
 let load_schema store schema_hash =
   Schema.decode (Store.get store schema_hash)
 
-let split_row schema row =
-  let key_cols = Schema.key_columns schema in
-  let val_cols = Schema.value_columns schema in
-  let key = List.map (fun (name, _) -> List.assoc name row) key_cols in
-  let value = List.map (fun (name, _) -> List.assoc name row) val_cols in
-  (key, value)
-
 let merge_row schema key_tuple value_tuple =
   let key_cols = Schema.key_columns schema in
   let val_cols = Schema.value_columns schema in
@@ -98,28 +91,40 @@ let create_table db ~table ~schema =
 
 let put_row db ~table ~row =
   let ts = StringMap.find table db.tables in
+  let uuid = Uuid.v7 () in
   let schema = load_schema db.store ts.schema in
-  let key_tuple, val_tuple = split_row schema row in
-  let key_bytes = Tuple.encode key_tuple in
+  let val_cols = Schema.value_columns schema in
+  let val_tuple = List.map (fun (name, _) -> List.assoc name row) val_cols in
+  let key_bytes = Tuple.encode [Tuple.Uuid uuid] in
+  let val_bytes = Tuple.encode val_tuple in
+  let root' = Tree.put db.store ts.root key_bytes val_bytes in
+  (uuid, { db with tables = StringMap.add table { ts with root = root' } db.tables })
+
+let update_row db ~table ~id ~row =
+  let ts = StringMap.find table db.tables in
+  let schema = load_schema db.store ts.schema in
+  let val_cols = Schema.value_columns schema in
+  let val_tuple = List.map (fun (name, _) -> List.assoc name row) val_cols in
+  let key_bytes = Tuple.encode [Tuple.Uuid id] in
   let val_bytes = Tuple.encode val_tuple in
   let root' = Tree.put db.store ts.root key_bytes val_bytes in
   { db with tables = StringMap.add table { ts with root = root' } db.tables }
 
-let get_row db ~table ~key =
+let get_row db ~table ~id =
   match StringMap.find_opt table db.tables with
   | None -> None
   | Some ts ->
-    let key_bytes = Tuple.encode key in
+    let key_bytes = Tuple.encode [Tuple.Uuid id] in
     match Tree.find db.store ts.root key_bytes with
     | None -> None
     | Some v ->
       let schema = load_schema db.store ts.schema in
       let val_tuple = Tuple.decode v in
-      Some (merge_row schema key val_tuple)
+      Some (merge_row schema [Tuple.Uuid id] val_tuple)
 
-let delete_row db ~table ~key =
+let delete_row db ~table ~id =
   let ts = StringMap.find table db.tables in
-  let key_bytes = Tuple.encode key in
+  let key_bytes = Tuple.encode [Tuple.Uuid id] in
   let root' = Tree.delete db.store ts.root key_bytes in
   { db with tables = StringMap.add table { ts with root = root' } db.tables }
 

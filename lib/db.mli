@@ -1,7 +1,7 @@
 (** Diffable, mergeable database backed by prolly trees.
 
     Each database holds named tables with schemas. Tables are prolly
-    trees keyed by primary key, with non-key columns as the value.
+    trees keyed by auto-generated UUIDv7, with user columns as the value.
     Supports commits, branches, diffs, and three-way cell-level merge. *)
 
 type t
@@ -30,9 +30,10 @@ val current_branch : t -> string
 val branch_heads : t -> (string * Hash.t) list
 
 val create_table : t -> table:string -> schema:Schema.t -> t
-val put_row : t -> table:string -> row:(string * Tuple.value) list -> t
-val get_row : t -> table:string -> key:Tuple.t -> (string * Tuple.value) list option
-val delete_row : t -> table:string -> key:Tuple.t -> t
+val put_row : t -> table:string -> row:(string * Tuple.value) list -> Uuid.t * t
+val update_row : t -> table:string -> id:Uuid.t -> row:(string * Tuple.value) list -> t
+val get_row : t -> table:string -> id:Uuid.t -> (string * Tuple.value) list option
+val delete_row : t -> table:string -> id:Uuid.t -> t
 val range_rows : t -> table:string -> (string * Tuple.value) list Seq.t
 
 val commit : t -> message:string -> Hash.t * t
