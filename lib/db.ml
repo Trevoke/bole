@@ -89,6 +89,8 @@ let of_parts ~store ~branches ~current_branch ~head_commit ?(working_state=[]) (
   { store; branches = branch_tbl; current_branch; tables }
 
 let create_table db ~table ~schema =
+  if StringMap.mem table db.tables then
+    invalid_arg (Printf.sprintf "Table %s already exists" table);
   let schema_data = Schema.encode schema in
   let schema_hash = Store.put db.store schema_data in
   let root = empty_tree_root db.store in

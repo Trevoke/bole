@@ -19,7 +19,9 @@ $BOLE init
 echo "=== put/get ==="
 $BOLE put users alice admin
 $BOLE put users bob editor
-# Must commit before get — working state is not persisted across invocations
+test "$($BOLE get users alice)" = "admin"
+test "$($BOLE get users bob)" = "editor"
+# Verify get still works after commit
 $BOLE commit -m "save working state" > /dev/null
 test "$($BOLE get users alice)" = "admin"
 test "$($BOLE get users bob)" = "editor"
