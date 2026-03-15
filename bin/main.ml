@@ -7,6 +7,12 @@ let find_root_or_die () =
     Printf.eprintf "fatal: not a bole repository (no .bole/ found)\n";
     exit 1
 
+let render_tuple t =
+  String.concat " " (List.map (function
+    | Bole.Tuple.String s -> s
+    | Bole.Tuple.Int64 n -> Int64.to_string n
+  ) t)
+
 (* --- init --- *)
 
 let init_cmd =
@@ -29,7 +35,9 @@ let put_cmd =
   let run table key value =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    let db = Bole.Db.put db ~table ~key ~value in
+    let db = Bole.Db.put db ~table
+      ~key:[Bole.Tuple.String key]
+      ~value:[Bole.Tuple.String value] in
     Bole.Repo.save path db
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
@@ -45,8 +53,8 @@ let get_cmd =
   let run table key =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    match Bole.Db.find db ~table ~key with
-    | Some value -> print_string value; print_newline ()
+    match Bole.Db.find db ~table ~key:[Bole.Tuple.String key] with
+    | Some value -> print_string (render_tuple value); print_newline ()
     | None ->
       Printf.eprintf "not found: %s/%s\n" table key;
       exit 1
@@ -63,7 +71,7 @@ let delete_cmd =
   let run table key =
     let path = find_root_or_die () in
     let db = Bole.Repo.load path in
-    let db = Bole.Db.delete db ~table ~key in
+    let db = Bole.Db.delete db ~table ~key:[Bole.Tuple.String key] in
     Bole.Repo.save path db
   in
   let table = Arg.(required & pos 0 (some string) None & info [] ~docv:"TABLE") in
@@ -153,10 +161,13 @@ let diff_cmd =
     Bole.Db.diff db ~from:h1 ~to_:h2 ~table
     |> Seq.iter (fun entry ->
       match entry with
-      | Bole.Diff.Added (k, v) -> Printf.printf "+ %s %s\n" k v
-      | Bole.Diff.Removed (k, v) -> Printf.printf "- %s %s\n" k v
-      | Bole.Diff.Modified (k, old_v, new_v) ->
-        Printf.printf "~ %s %s -> %s\n" k old_v new_v)
+      | Bole.Db.Added (k, v) ->
+        Printf.printf "+ %s %s\n" (render_tuple k) (render_tuple v)
+      | Bole.Db.Removed (k, v) ->
+        Printf.printf "- %s %s\n" (render_tuple k) (render_tuple v)
+      | Bole.Db.Modified (k, old_v, new_v) ->
+        Printf.printf "~ %s %s -> %s\n" (render_tuple k)
+          (render_tuple old_v) (render_tuple new_v))
   in
   let commit1 = Arg.(required & pos 0 (some string) None & info [] ~docv:"COMMIT1") in
   let commit2 = Arg.(required & pos 1 (some string) None & info [] ~docv:"COMMIT2") in
@@ -180,7 +191,7 @@ let merge_cmd =
       Printf.printf "Merge completed with %d conflict(s):\n"
         (List.length result.Bole.Db.conflicts);
       List.iter (fun (c : Bole.Db.conflict) ->
-        Printf.printf "  CONFLICT: %s/%s\n" c.table c.key
+        Printf.printf "  CONFLICT: %s/%s\n" c.table (render_tuple c.key)
       ) result.Bole.Db.conflicts
     end
   in
