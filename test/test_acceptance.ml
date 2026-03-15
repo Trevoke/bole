@@ -247,6 +247,44 @@ let test_cell_level_merge () =
     Alcotest.(check tuple_value) "merged email" (String "new@ex.com") (List.assoc "email" row)
   | None -> Alcotest.fail "expected merged row"
 
+(* --- Test 12: All types round-trip --- *)
+
+let test_all_types () =
+  let db = Bole.Db.create () in
+  let open Bole.Tuple in
+  let schema = Bole.Schema.create ~columns:[
+    "name", Bole.Schema.Str;
+    "age", Bole.Schema.Int64;
+    "active", Bole.Schema.Bool;
+    "score", Bole.Schema.Float;
+    "created", Bole.Schema.Timestamp;
+    "avatar", Bole.Schema.Blob;
+  ] in
+  let db = Bole.Db.create_table db ~table:"users" ~schema in
+  let avatar_data = "\x89PNG\x00\x01\x02" in
+  let created_ts = 1710500000000000L in
+  let id, db = Bole.Db.put_row db ~table:"users" ~row:[
+    "name", String "alice";
+    "age", Int64 30L;
+    "active", Bool true;
+    "score", Float 98.5;
+    "created", Timestamp created_ts;
+    "avatar", Blob avatar_data;
+  ] in
+  match Bole.Db.get_row db ~table:"users" ~id with
+  | Some row ->
+    Alcotest.(check tuple_value) "name" (String "alice") (List.assoc "name" row);
+    Alcotest.(check tuple_value) "age" (Int64 30L) (List.assoc "age" row);
+    Alcotest.(check tuple_value) "active" (Bool true) (List.assoc "active" row);
+    (match List.assoc "score" row with
+     | Float f -> Alcotest.(check (float 0.001)) "score" 98.5 f
+     | _ -> Alcotest.fail "expected Float");
+    Alcotest.(check tuple_value) "created" (Timestamp created_ts) (List.assoc "created" row);
+    (match List.assoc "avatar" row with
+     | Blob b -> Alcotest.(check string) "avatar" avatar_data b
+     | _ -> Alcotest.fail "expected Blob")
+  | None -> Alcotest.fail "expected row"
+
 (* --- Registration --- *)
 
 let tests =
@@ -261,5 +299,6 @@ let tests =
       Alcotest.test_case "range chronological" `Quick test_range_chronological;
       Alcotest.test_case "schema-aware table" `Quick test_schema_aware_table;
       Alcotest.test_case "cell-level merge" `Quick test_cell_level_merge;
+      Alcotest.test_case "all types" `Quick test_all_types;
     ]
   ]
