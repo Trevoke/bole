@@ -13,6 +13,7 @@ let () =
        ; Test_commit.tests
        ; Test_merge.tests
        ; Test_tuple.tests
+       ; Test_schema.tests
        ; Test_repo.tests
        ; Test_acceptance.tests
        ])
