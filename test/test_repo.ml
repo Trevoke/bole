@@ -29,28 +29,44 @@ let test_round_trip () =
   with_tmp_dir (fun dir ->
     Bole.Repo.init dir;
     let db = Bole.Repo.load dir in
-    let db = Bole.Db.put db ~table:"users" ~key:"alice" ~value:"admin" in
+    let db = Bole.Db.put db ~table:"users" ~key:[Bole.Tuple.String "alice"] ~value:[Bole.Tuple.String "admin"] in
     let _h, db = Bole.Db.commit db ~message:"first" in
     Bole.Repo.save dir db;
     let db2 = Bole.Repo.load dir in
-    Alcotest.(check (option string)) "persisted value"
-      (Some "admin") (Bole.Db.find db2 ~table:"users" ~key:"alice"))
+    let opt_tuple = Alcotest.option (Alcotest.testable
+      (fun fmt t -> Format.fprintf fmt "%s"
+        (String.concat ", " (List.map (function
+          | Bole.Tuple.String s -> s
+          | Bole.Tuple.Int64 n -> Int64.to_string n
+        ) t)))
+      (=))
+    in
+    Alcotest.(check opt_tuple) "persisted value"
+      (Some [Bole.Tuple.String "admin"]) (Bole.Db.find db2 ~table:"users" ~key:[Bole.Tuple.String "alice"]))
 
 let test_branch_persistence () =
   with_tmp_dir (fun dir ->
     Bole.Repo.init dir;
     let db = Bole.Repo.load dir in
-    let db = Bole.Db.put db ~table:"t" ~key:"k" ~value:"v" in
+    let db = Bole.Db.put db ~table:"t" ~key:[Bole.Tuple.String "k"] ~value:[Bole.Tuple.String "v"] in
     let _, db = Bole.Db.commit db ~message:"init" in
     let db = Bole.Db.branch db ~name:"feature" in
-    let db = Bole.Db.put db ~table:"t" ~key:"k2" ~value:"v2" in
+    let db = Bole.Db.put db ~table:"t" ~key:[Bole.Tuple.String "k2"] ~value:[Bole.Tuple.String "v2"] in
     let _, db = Bole.Db.commit db ~message:"on feature" in
     Bole.Repo.save dir db;
     let db2 = Bole.Repo.load dir in
     Alcotest.(check string) "on feature branch" "feature"
       (Bole.Db.current_branch db2);
-    Alcotest.(check (option string)) "feature has k2"
-      (Some "v2") (Bole.Db.find db2 ~table:"t" ~key:"k2"))
+    let opt_tuple = Alcotest.option (Alcotest.testable
+      (fun fmt t -> Format.fprintf fmt "%s"
+        (String.concat ", " (List.map (function
+          | Bole.Tuple.String s -> s
+          | Bole.Tuple.Int64 n -> Int64.to_string n
+        ) t)))
+      (=))
+    in
+    Alcotest.(check opt_tuple) "feature has k2"
+      (Some [Bole.Tuple.String "v2"]) (Bole.Db.find db2 ~table:"t" ~key:[Bole.Tuple.String "k2"]))
 
 let tests =
   [ "repo", [
